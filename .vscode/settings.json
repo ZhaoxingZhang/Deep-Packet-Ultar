@@ -1,0 +1,37 @@
+{
+    "python.defaultInterpreterPath": "/usr/local/Caskroom/miniconda/base/envs/deep_packet/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.languageServer": "Pylsp",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.stubPath": "./typings",
+    "python.analysis.extraPaths": [
+        ".",
+        "./model",
+        "./ml"
+    ],
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true,
+    "python.sortImports.args": [
+        "--profile",
+        "black"
+    ],
+    "files.associations": {
+        "*.py": "python"
+    },
+    "python.analysis.include": [
+        "**/*.py"
+    ],
+    "python.analysis.exclude": [
+        "**/__pycache__",
+        "**/.git",
+        "**/node_modules",
+        "**/venv",
+        "**/.venv"
+    ]
+}

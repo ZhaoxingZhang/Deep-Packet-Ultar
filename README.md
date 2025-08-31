@@ -137,3 +137,8 @@ Code ran on AWS `g5.xlarge`
 ```
 7:55 elapsed
 ```
+
+Evaluation
+```
+python evaluation.py -m model/exp1_final_resnet.model -d train_test_data/exp1_final_resnet/application_classification/test.parquet --model_type resnet
+```

@@ -130,7 +130,7 @@ def train_application_classification_cnn_model(data_path, model_path):
     )
 
 
-def train_application_classification_resnet_model(data_path, model_path):
+def train_application_classification_resnet_model(data_path, model_path, output_dim=17):
     logger = TensorBoardLogger(
         "application_classification_resnet_logs", "application_classification_resnet"
     )
@@ -140,7 +140,7 @@ def train_application_classification_resnet_model(data_path, model_path):
         c1_stride=3,
         c1_groups=1,
         c1_n_block=4,
-        output_dim=17,
+        output_dim=output_dim,
         data_path=data_path,
         epoch=40,
         model_path=model_path,

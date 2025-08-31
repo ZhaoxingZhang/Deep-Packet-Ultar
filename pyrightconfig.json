@@ -1,0 +1,29 @@
+{
+    "include": [
+        "."
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.git",
+        "**/venv",
+        "**/.venv",
+        "**/.*"
+    ],
+    "ignore": [],
+    "defineConstant": {},
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "autoImportCompletions": true,
+    "autoSearchPaths": true,
+    "extraPaths": [
+        ".",
+        "./model",
+        "./ml"
+    ],
+    "stubPath": "./typings",
+    "venvPath": ".",
+    "venv": "deep_packet",
+    "pythonVersion": "3.10",
+    "pythonPlatform": "Darwin"
+}

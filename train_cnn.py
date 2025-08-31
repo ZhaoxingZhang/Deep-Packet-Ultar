@@ -1,4 +1,7 @@
+import warnings
+warnings.filterwarnings("ignore", "pkg_resources is deprecated")
 import click
+import os
 
 from ml.utils import (
     train_application_classification_cnn_model,
@@ -21,6 +24,8 @@ from ml.utils import (
     required=True,
 )
 def main(data_path, model_path, task):
+    data_path = os.path.abspath(data_path)
+    model_path = os.path.abspath(model_path)
     if task == "app":
         train_application_classification_cnn_model(data_path, model_path)
     elif task == "traffic":

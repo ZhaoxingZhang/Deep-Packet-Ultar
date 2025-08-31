@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -76,13 +77,65 @@ def save_test(df, path_dir):
     save_parquet(df, path)
 
 
-def create_train_test_for_task(df, label_col, test_size, under_sampling, data_dir_path):
+def create_train_test_for_task(
+    df,
+    label_col,
+    test_size,
+    data_dir_path,
+    known_ratio,
+    unknown_train_ratio,
+):
     task_df = df.filter(col(label_col).isNotNull()).selectExpr(
         "feature", f"{label_col} as label"
     )
-    print("splitting train test")
-    train_df, test_df = split_train_test(task_df, test_size, under_sampling)
-    print("splitting train test done")
+
+    # 1. Get all labels and split them into three groups
+    all_labels = [row.label for row in task_df.select("label").distinct().collect()]
+    print(f"DEBUG: Found {len(all_labels)} unique labels: {all_labels}")
+    random.Random(9876).shuffle(all_labels)
+
+    num_known = int(len(all_labels) * known_ratio)
+    print(f"DEBUG: Calculated num_known: {num_known}")
+    num_unknown_train = int(len(all_labels) * unknown_train_ratio)
+
+    known_labels = all_labels[:num_known]
+    unknown_train_labels = all_labels[num_known : num_known + num_unknown_train]
+    unknown_test_labels = all_labels[num_known + num_unknown_train :]
+    
+    # The new label for the 'unknown' class will be the next available integer
+    unknown_class_label = max(all_labels) + 1
+
+    print(f"Known labels: {known_labels}")
+    print(f"Unknown labels for training: {unknown_train_labels}")
+    print(f"Unknown labels for testing: {unknown_test_labels}")
+    print(f"'Unknown' class label will be: {unknown_class_label}")
+
+    # 2. Create a final mapping for the labels to be contiguous from 0
+    final_labels = sorted(known_labels + [unknown_class_label])
+    label_mapping = {label: i for i, label in enumerate(final_labels)}
+    print(f"Final label mapping for the model: {label_mapping}")
+
+    # 3. Create Training Set
+    known_train_df = task_df.filter(col("label").isin(known_labels))
+    unknown_train_df = task_df.filter(col("label").isin(unknown_train_labels)) \
+                              .withColumn("label", lit(unknown_class_label))
+    
+    train_df = known_train_df.unionAll(unknown_train_df)
+
+    # 4. Create Test Set
+    known_test_df = task_df.filter(col("label").isin(known_labels))
+    unknown_test_df = task_df.filter(col("label").isin(unknown_test_labels)) \
+                             .withColumn("label", lit(unknown_class_label))
+    test_df = known_test_df.unionAll(unknown_test_df)
+
+    # 5. Remap labels in both dataframes to be contiguous
+    from pyspark.sql.functions import create_map
+    from itertools import chain
+    mapping_expr = create_map([lit(x) for x in chain(*label_mapping.items())])
+
+    train_df = train_df.withColumn("label", mapping_expr[col("label")])
+    test_df = test_df.withColumn("label", mapping_expr[col("label")])
+
     print("saving train")
     save_train(train_df, data_dir_path)
     print("saving train done")
@@ -108,14 +161,23 @@ def print_df_label_distribution(spark, path):
 @click.option(
     "-t",
     "--target",
-    help="path to the directory for persisting train and test set for both app and traffic classification",
+    help="path to the directory for persisting train and test set",
     required=True,
 )
 @click.option("--test_size", default=0.2, help="size of test size", type=float)
 @click.option(
-    "--under_sampling", default=True, help="under sampling training data", type=bool
+    "--known_ratio",
+    default=0.3,
+    help="Ratio of classes to be used as 'known' classes.",
+    type=float,
 )
-def main(source, target, test_size, under_sampling):
+@click.option(
+    "--unknown_train_ratio",
+    default=0.3,
+    help="Ratio of classes to be used as 'unknown' for training.",
+    type=float,
+)
+def main(source, target, test_size, known_ratio, unknown_train_ratio):
     source_data_dir_path = Path(source)
     target_data_dir_path = Path(target)
 
@@ -153,8 +215,9 @@ def main(source, target, test_size, under_sampling):
         df=df,
         label_col="app_label",
         test_size=test_size,
-        under_sampling=under_sampling,
         data_dir_path=application_data_dir_path,
+        known_ratio=known_ratio,
+        unknown_train_ratio=unknown_train_ratio,
     )
 
     print("processing traffic classification dataset")
@@ -162,8 +225,9 @@ def main(source, target, test_size, under_sampling):
         df=df,
         label_col="traffic_label",
         test_size=test_size,
-        under_sampling=under_sampling,
         data_dir_path=traffic_data_dir_path,
+        known_ratio=known_ratio,
+        unknown_train_ratio=unknown_train_ratio,
     )
 
     # stats

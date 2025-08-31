@@ -97,18 +97,34 @@ class CNN(LightningModule):
         return x
 
     def train_dataloader(self):
-        # expect to get train folder
-        dataset_dict = datasets.load_dataset(self.hparams.data_path)
-        dataset = dataset_dict[list(dataset_dict.keys())[0]]
+        import os
+        import torch
+        import pyarrow.parquet as pq
+        from torch.utils.data import TensorDataset
+
+        train_path = os.path.join(self.hparams.data_path, 'train.parquet')
+        table = pq.read_table(train_path)
+        df = table.to_pandas()
+        
+        features = torch.tensor(df['feature'].tolist(), dtype=torch.float32)
+        labels = torch.tensor(df['label'].tolist(), dtype=torch.long)
+        
+        # The CNN model expects a channel dimension, so we add it.
+        if len(features.shape) == 2:
+            features = features.unsqueeze(1)
+
+        dataset = TensorDataset(features, labels)
+
         try:
             num_workers = multiprocessing.cpu_count()
         except:
             num_workers = 1
+        
+        # We no longer need a collate_fn because TensorDataset handles it.
         dataloader = DataLoader(
             dataset,
             batch_size=16,
             num_workers=num_workers,
-            collate_fn=dataset_collate_function,
             shuffle=True,
         )
 
@@ -118,8 +134,7 @@ class CNN(LightningModule):
         return torch.optim.Adam(self.parameters())
 
     def training_step(self, batch, batch_idx):
-        x = batch["feature"].float()
-        y = batch["label"].long()
+        x, y = batch
         y_hat = self(x)
 
         entropy = F.cross_entropy(y_hat, y)
@@ -528,18 +543,34 @@ class ResNet(LightningModule):
         return x
 
     def train_dataloader(self):
-        # expect to get train folder
-        dataset_dict = datasets.load_dataset(self.hparams.data_path)
-        dataset = dataset_dict[list(dataset_dict.keys())[0]]
+        import os
+        import torch
+        import pyarrow.parquet as pq
+        from torch.utils.data import TensorDataset
+
+        train_path = os.path.join(self.hparams.data_path, 'train.parquet')
+        table = pq.read_table(train_path)
+        df = table.to_pandas()
+        
+        features = torch.tensor(df['feature'].tolist(), dtype=torch.float32)
+        labels = torch.tensor(df['label'].tolist(), dtype=torch.long)
+        
+        # The CNN model expects a channel dimension, so we add it.
+        if len(features.shape) == 2:
+            features = features.unsqueeze(1)
+
+        dataset = TensorDataset(features, labels)
+
         try:
             num_workers = multiprocessing.cpu_count()
         except:
             num_workers = 1
+        
+        # We no longer need a collate_fn because TensorDataset handles it.
         dataloader = DataLoader(
             dataset,
             batch_size=16,
             num_workers=num_workers,
-            collate_fn=dataset_collate_function,
             shuffle=True,
         )
 
@@ -549,8 +580,7 @@ class ResNet(LightningModule):
         return torch.optim.Adam(self.parameters())
 
     def training_step(self, batch, batch_idx):
-        x = batch["feature"].float()
-        y = batch["label"].long()
+        x, y = batch
         y_hat = self(x)
 
         entropy = F.cross_entropy(y_hat, y)
