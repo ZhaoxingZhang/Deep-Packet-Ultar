@@ -25,18 +25,30 @@ from ml.utils import (
     help='classification task. Option: "app" or "traffic"',
     required=True,
 )
-def main(data_path, model_path, task):
+@click.option(
+    "--use_attention",
+    is_flag=True,
+    default=False,
+    help="Enable attention mechanism in the ResNet model."
+)
+@click.option(
+    "--validation_split",
+    default=0.1,
+    help="Fraction of the training data to use for validation.",
+    type=float,
+)
+def main(data_path, model_path, task, use_attention, validation_split):
     if task == "app":
         # Calculate output_dim from the training data
         train_parquet_path = os.path.join(data_path, 'train.parquet')
         table = pq.read_table(train_parquet_path)
-        output_dim = len(table['label'].unique())
+        output_dim = table['label'].to_pandas().max() + 1
         print(f"Dynamically determined output_dim: {output_dim}")
 
-        train_application_classification_resnet_model(data_path, model_path, output_dim=output_dim)
+        train_application_classification_resnet_model(data_path, model_path, output_dim=output_dim, use_attention=use_attention, validation_split=validation_split)
     elif task == "traffic":
         # Assuming similar logic for traffic classification if needed in the future
-        train_traffic_classification_resnet_model(data_path, model_path)
+        train_traffic_classification_resnet_model(data_path, model_path, validation_split=validation_split)
     else:
         exit("Not Support")
 

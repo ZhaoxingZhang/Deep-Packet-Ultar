@@ -1,4 +1,5 @@
 import multiprocessing
+import numpy as np
 
 import datasets
 import torch
@@ -106,8 +107,8 @@ class CNN(LightningModule):
         table = pq.read_table(train_path)
         df = table.to_pandas()
         
-        features = torch.tensor(df['feature'].tolist(), dtype=torch.float32)
-        labels = torch.tensor(df['label'].tolist(), dtype=torch.long)
+        features = torch.from_numpy(np.array(df['feature'].tolist(), dtype=np.float32))
+        labels = torch.from_numpy(np.array(df['label'].tolist(), dtype=np.int64))
         
         # The CNN model expects a channel dimension, so we add it.
         if len(features.shape) == 2:
@@ -212,6 +213,27 @@ class CustomMaxPool1d(nn.Module):
         net = self.max_pool(net)
 
         return net
+
+
+class SEBlock(nn.Module):
+    """
+    Squeeze-and-Excitation Block
+    """
+    def __init__(self, in_channels, r=16):
+        super(SEBlock, self).__init__()
+        self.squeeze = nn.AdaptiveAvgPool1d(1)
+        self.excitation = nn.Sequential(
+            nn.Linear(in_channels, in_channels // r, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channels // r, in_channels, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        bs, c, _ = x.shape
+        y = self.squeeze(x).view(bs, c)
+        y = self.excitation(y).view(bs, c, 1)
+        return x * y.expand_as(x)
 
 
 class BasicBlock(nn.Module):
@@ -347,6 +369,7 @@ class ResNet1d(nn.Module):
         increasefilter_gap=4,
         use_bn=True,
         use_do=True,
+        use_attention=False,
         verbose=False,
     ):
         super(ResNet1d, self).__init__()
@@ -358,6 +381,7 @@ class ResNet1d(nn.Module):
         self.groups = groups
         self.use_bn = use_bn
         self.use_do = use_do
+        self.use_attention = use_attention
 
         self.downsample_gap = downsample_gap  # 2 for base model
         self.increasefilter_gap = increasefilter_gap  # 4 for base model
@@ -416,6 +440,10 @@ class ResNet1d(nn.Module):
         # final prediction
         self.final_bn = nn.BatchNorm1d(out_channels)
         self.final_relu = nn.ReLU(inplace=True)
+        
+        if self.use_attention:
+            self.se = SEBlock(out_channels)
+
         # self.do = nn.Dropout(p=0.5)
         self.dense = nn.Linear(out_channels, n_classes)
         # self.softmax = nn.Softmax(dim=1)
@@ -451,6 +479,10 @@ class ResNet1d(nn.Module):
         if self.use_bn:
             out = self.final_bn(out)
         out = self.final_relu(out)
+
+        if self.use_attention:
+            out = self.se(out)
+
         out = out.mean(-1)
         if self.verbose:
             print("final pooling", out.shape)
@@ -476,6 +508,8 @@ class ResNet(LightningModule):
         output_dim,
         data_path,
         signal_length,
+        use_attention=False,
+        validation_split=0.1,  # New parameter
     ):
         super().__init__()
         # save parameters to checkpoint
@@ -491,6 +525,7 @@ class ResNet(LightningModule):
                 groups=self.hparams.c1_groups,
                 n_block=self.hparams.c1_n_block,
                 n_classes=self.hparams.c1_output_dim,
+                use_attention=self.hparams.use_attention,
             ),
             nn.ReLU(),
         )
@@ -542,39 +577,67 @@ class ResNet(LightningModule):
 
         return x
 
-    def train_dataloader(self):
+    def setup(self, stage=None):
+        # This is called by the Trainer before fitting
         import os
         import torch
         import pyarrow.parquet as pq
-        from torch.utils.data import TensorDataset
+        from torch.utils.data import TensorDataset, random_split
 
         train_path = os.path.join(self.hparams.data_path, 'train.parquet')
         table = pq.read_table(train_path)
         df = table.to_pandas()
         
-        features = torch.tensor(df['feature'].tolist(), dtype=torch.float32)
-        labels = torch.tensor(df['label'].tolist(), dtype=torch.long)
+        features = torch.from_numpy(np.array(df['feature'].tolist(), dtype=np.float32))
+        labels = torch.from_numpy(np.array(df['label'].tolist(), dtype=np.int64))
         
-        # The CNN model expects a channel dimension, so we add it.
         if len(features.shape) == 2:
             features = features.unsqueeze(1)
 
-        dataset = TensorDataset(features, labels)
+        full_dataset = TensorDataset(features, labels)
+        
+        # Split dataset
+        val_size = int(len(full_dataset) * self.hparams.validation_split)
+        train_size = len(full_dataset) - val_size
+        self.train_dataset, self.val_dataset = random_split(full_dataset, [train_size, val_size])
 
+    def train_dataloader(self):
         try:
             num_workers = multiprocessing.cpu_count()
         except:
             num_workers = 1
         
-        # We no longer need a collate_fn because TensorDataset handles it.
-        dataloader = DataLoader(
-            dataset,
+        return DataLoader(
+            self.train_dataset,
             batch_size=16,
             num_workers=num_workers,
             shuffle=True,
         )
 
-        return dataloader
+    def val_dataloader(self):
+        try:
+            num_workers = multiprocessing.cpu_count()
+        except:
+            num_workers = 1
+
+        return DataLoader(
+            self.val_dataset,
+            batch_size=16,
+            num_workers=num_workers,
+            shuffle=False,
+        )
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        
+        preds = torch.argmax(y_hat, dim=1)
+        acc = torch.tensor(torch.sum(preds == y).item() / (len(y) * 1.0))
+        
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val_acc", acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters())
@@ -592,6 +655,4 @@ class ResNet(LightningModule):
             on_step=True,
             on_epoch=True,
         )
-        loss = {"loss": entropy}
-
-        return loss
+        return entropy

@@ -140,6 +140,7 @@ cython_debug/
 
 # idea
 .idea/
+.vscode/
 
 # unknown
 .DS_Store
@@ -154,6 +155,10 @@ model/
 
 # logs
 lightning_logs/
+application_classification_resnet_logs/
+application_classification_cnn_logs/
+agent/
+evaluation_results/
 
 # transfer file
 transfer.sh

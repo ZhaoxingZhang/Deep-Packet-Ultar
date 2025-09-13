@@ -73,6 +73,8 @@ def train_resnet(
     model_path,
     signal_length,
     logger,
+    use_attention=False,
+    validation_split=0.1,
 ):
     # prepare dir for model path
     if model_path:
@@ -91,6 +93,8 @@ def train_resnet(
         output_dim=output_dim,
         data_path=data_path,
         signal_length=signal_length,
+        use_attention=use_attention,
+        validation_split=validation_split,
     ).float()
     trainer = Trainer(
         val_check_interval=1.0,
@@ -100,7 +104,7 @@ def train_resnet(
         logger=logger,
         callbacks=[
             EarlyStopping(
-                monitor="training_loss", mode="min", check_on_train_epoch_end=True
+                monitor="val_loss", mode="min", check_on_train_epoch_end=True
             )
         ],
     )
@@ -130,7 +134,7 @@ def train_application_classification_cnn_model(data_path, model_path):
     )
 
 
-def train_application_classification_resnet_model(data_path, model_path, output_dim=17):
+def train_application_classification_resnet_model(data_path, model_path, output_dim=17, use_attention=False, validation_split=0.1):
     logger = TensorBoardLogger(
         "application_classification_resnet_logs", "application_classification_resnet"
     )
@@ -146,6 +150,8 @@ def train_application_classification_resnet_model(data_path, model_path, output_
         model_path=model_path,
         signal_length=1500,
         logger=logger,
+        use_attention=use_attention,
+        validation_split=validation_split,
     )
 
 

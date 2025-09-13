@@ -20,7 +20,7 @@ def load_data(data_path):
     df = table.to_pandas()
     
     features = torch.from_numpy(np.array(df['feature'].tolist(), dtype=np.float32))
-    labels = torch.tensor(df['label'].tolist(), dtype=torch.long)
+    labels = torch.from_numpy(np.array(df['label'].tolist(), dtype=np.int64))
     
     if len(features.shape) == 2:
         features = features.unsqueeze(1)
