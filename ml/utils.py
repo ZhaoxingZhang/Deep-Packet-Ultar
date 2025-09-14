@@ -75,6 +75,7 @@ def train_resnet(
     logger,
     use_attention=False,
     validation_split=0.1,
+    loss_type='cross_entropy',
 ):
     # prepare dir for model path
     if model_path:
@@ -95,6 +96,7 @@ def train_resnet(
         signal_length=signal_length,
         use_attention=use_attention,
         validation_split=validation_split,
+        loss_type=loss_type,
     ).float()
     trainer = Trainer(
         val_check_interval=1.0,
@@ -134,7 +136,7 @@ def train_application_classification_cnn_model(data_path, model_path):
     )
 
 
-def train_application_classification_resnet_model(data_path, model_path, output_dim=17, use_attention=False, validation_split=0.1):
+def train_application_classification_resnet_model(data_path, model_path, output_dim=17, use_attention=False, validation_split=0.1, loss_type='cross_entropy'):
     logger = TensorBoardLogger(
         "application_classification_resnet_logs", "application_classification_resnet"
     )
@@ -152,6 +154,7 @@ def train_application_classification_resnet_model(data_path, model_path, output_
         logger=logger,
         use_attention=use_attention,
         validation_split=validation_split,
+        loss_type=loss_type,
     )
 
 

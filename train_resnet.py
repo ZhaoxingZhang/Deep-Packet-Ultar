@@ -37,7 +37,13 @@ from ml.utils import (
     help="Fraction of the training data to use for validation.",
     type=float,
 )
-def main(data_path, model_path, task, use_attention, validation_split):
+@click.option(
+    "--loss_type",
+    default='cross_entropy',
+    help="Type of loss function to use.",
+    type=click.Choice(['cross_entropy', 'focal_loss']),
+)
+def main(data_path, model_path, task, use_attention, validation_split, loss_type):
     if task == "app":
         # Calculate output_dim from the training data
         train_parquet_path = os.path.join(data_path, 'train.parquet')
@@ -45,7 +51,7 @@ def main(data_path, model_path, task, use_attention, validation_split):
         output_dim = table['label'].to_pandas().max() + 1
         print(f"Dynamically determined output_dim: {output_dim}")
 
-        train_application_classification_resnet_model(data_path, model_path, output_dim=output_dim, use_attention=use_attention, validation_split=validation_split)
+        train_application_classification_resnet_model(data_path, model_path, output_dim=output_dim, use_attention=use_attention, validation_split=validation_split, loss_type=loss_type)
     elif task == "traffic":
         # Assuming similar logic for traffic classification if needed in the future
         train_traffic_classification_resnet_model(data_path, model_path, validation_split=validation_split)

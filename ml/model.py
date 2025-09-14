@@ -4,11 +4,47 @@ import numpy as np
 import datasets
 import torch
 from pytorch_lightning import LightningModule
-from torch import nn as nn
+import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+from collections import Counter
 
 from ml.dataset import dataset_collate_function
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=None, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        # alpha can be a float for binary classification, or a tensor for multi-class
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        # inputs: [N, C], targets: [N]
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        
+        focal_term = (1-pt)**self.gamma
+        
+        if self.alpha is not None:
+            if isinstance(self.alpha, torch.Tensor):
+                # If alpha is a tensor, gather the weights for each sample
+                alpha_t = self.alpha.gather(0, targets.data.view(-1))
+                focal_loss = alpha_t * focal_term * ce_loss
+            else:
+                # If alpha is a scalar
+                focal_loss = self.alpha * focal_term * ce_loss
+        else:
+            focal_loss = focal_term * ce_loss
+
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
 
 
 class CNN(LightningModule):
@@ -509,7 +545,8 @@ class ResNet(LightningModule):
         data_path,
         signal_length,
         use_attention=False,
-        validation_split=0.1,  # New parameter
+        validation_split=0.1,
+        loss_type='cross_entropy',  # New parameter
     ):
         super().__init__()
         # save parameters to checkpoint
@@ -601,6 +638,23 @@ class ResNet(LightningModule):
         train_size = len(full_dataset) - val_size
         self.train_dataset, self.val_dataset = random_split(full_dataset, [train_size, val_size])
 
+        # Setup loss function
+        if self.hparams.loss_type == 'focal_loss':
+            # Calculate class weights for alpha parameter in Focal Loss
+            train_labels = self.train_dataset.dataset.tensors[1][self.train_dataset.indices]
+            class_counts = Counter(train_labels.tolist())
+            
+            # Compute weights using inverse frequency, with a safe guard for unseen classes
+            weights = torch.tensor([1.0 / class_counts[i] if i in class_counts and class_counts[i] > 0 else 1.0 for i in range(self.hparams.output_dim)], dtype=torch.float32)
+            
+            # The alpha in FocalLoss needs to be on the same device as the model
+            # We register it as a buffer so it's automatically moved to the correct device
+            self.register_buffer('alpha_weights', weights)
+            
+            self.criterion = FocalLoss(alpha=self.alpha_weights, gamma=2, reduction='mean')
+        else: # Default to cross_entropy
+            self.criterion = nn.CrossEntropyLoss()
+
     def train_dataloader(self):
         try:
             num_workers = multiprocessing.cpu_count()
@@ -630,7 +684,7 @@ class ResNet(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = F.cross_entropy(y_hat, y)
+        loss = self.criterion(y_hat, y)
         
         preds = torch.argmax(y_hat, dim=1)
         acc = torch.tensor(torch.sum(preds == y).item() / (len(y) * 1.0))
@@ -646,7 +700,7 @@ class ResNet(LightningModule):
         x, y = batch
         y_hat = self(x)
 
-        entropy = F.cross_entropy(y_hat, y)
+        entropy = self.criterion(y_hat, y)
         self.log(
             "training_loss",
             entropy,
