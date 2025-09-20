@@ -7,44 +7,14 @@ from pytorch_lightning import LightningModule
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from collections import Counter
+
 
 from ml.dataset import dataset_collate_function
 
 
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=None, gamma=2, reduction='mean'):
-        super(FocalLoss, self).__init__()
-        # alpha can be a float for binary classification, or a tensor for multi-class
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
 
-    def forward(self, inputs, targets):
-        # inputs: [N, C], targets: [N]
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
-        
-        focal_term = (1-pt)**self.gamma
-        
-        if self.alpha is not None:
-            if isinstance(self.alpha, torch.Tensor):
-                # If alpha is a tensor, gather the weights for each sample
-                alpha_t = self.alpha.gather(0, targets.data.view(-1))
-                focal_loss = alpha_t * focal_term * ce_loss
-            else:
-                # If alpha is a scalar
-                focal_loss = self.alpha * focal_term * ce_loss
-        else:
-            focal_loss = focal_term * ce_loss
-
-        if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
 
 
 class CNN(LightningModule):
@@ -251,25 +221,7 @@ class CustomMaxPool1d(nn.Module):
         return net
 
 
-class SEBlock(nn.Module):
-    """
-    Squeeze-and-Excitation Block
-    """
-    def __init__(self, in_channels, r=16):
-        super(SEBlock, self).__init__()
-        self.squeeze = nn.AdaptiveAvgPool1d(1)
-        self.excitation = nn.Sequential(
-            nn.Linear(in_channels, in_channels // r, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_channels // r, in_channels, bias=False),
-            nn.Sigmoid()
-        )
 
-    def forward(self, x):
-        bs, c, _ = x.shape
-        y = self.squeeze(x).view(bs, c)
-        y = self.excitation(y).view(bs, c, 1)
-        return x * y.expand_as(x)
 
 
 class BasicBlock(nn.Module):
@@ -405,7 +357,6 @@ class ResNet1d(nn.Module):
         increasefilter_gap=4,
         use_bn=True,
         use_do=True,
-        use_attention=False,
         verbose=False,
     ):
         super(ResNet1d, self).__init__()
@@ -417,7 +368,6 @@ class ResNet1d(nn.Module):
         self.groups = groups
         self.use_bn = use_bn
         self.use_do = use_do
-        self.use_attention = use_attention
 
         self.downsample_gap = downsample_gap  # 2 for base model
         self.increasefilter_gap = increasefilter_gap  # 4 for base model
@@ -476,9 +426,6 @@ class ResNet1d(nn.Module):
         # final prediction
         self.final_bn = nn.BatchNorm1d(out_channels)
         self.final_relu = nn.ReLU(inplace=True)
-        
-        if self.use_attention:
-            self.se = SEBlock(out_channels)
 
         # self.do = nn.Dropout(p=0.5)
         self.dense = nn.Linear(out_channels, n_classes)
@@ -516,9 +463,6 @@ class ResNet1d(nn.Module):
             out = self.final_bn(out)
         out = self.final_relu(out)
 
-        if self.use_attention:
-            out = self.se(out)
-
         out = out.mean(-1)
         if self.verbose:
             print("final pooling", out.shape)
@@ -544,9 +488,9 @@ class ResNet(LightningModule):
         output_dim,
         data_path,
         signal_length,
-        use_attention=False,
         validation_split=0.1,
-        loss_type='cross_entropy',  # New parameter
+        loss_type='cross_entropy',
+        sampling_strategy='random', # New parameter
     ):
         super().__init__()
         # save parameters to checkpoint
@@ -562,7 +506,6 @@ class ResNet(LightningModule):
                 groups=self.hparams.c1_groups,
                 n_block=self.hparams.c1_n_block,
                 n_classes=self.hparams.c1_output_dim,
-                use_attention=self.hparams.use_attention,
             ),
             nn.ReLU(),
         )
@@ -620,6 +563,7 @@ class ResNet(LightningModule):
         import torch
         import pyarrow.parquet as pq
         from torch.utils.data import TensorDataset, random_split
+        from collections import Counter
 
         train_path = os.path.join(self.hparams.data_path, 'train.parquet')
         table = pq.read_table(train_path)
@@ -638,34 +582,39 @@ class ResNet(LightningModule):
         train_size = len(full_dataset) - val_size
         self.train_dataset, self.val_dataset = random_split(full_dataset, [train_size, val_size])
 
-        # Setup loss function
-        if self.hparams.loss_type == 'focal_loss':
-            # Calculate class weights for alpha parameter in Focal Loss
+        # Calculate weights for class-aware sampling
+        if self.hparams.sampling_strategy == 'class_aware':
             train_labels = self.train_dataset.dataset.tensors[1][self.train_dataset.indices]
             class_counts = Counter(train_labels.tolist())
             
-            # Compute weights using inverse frequency, with a safe guard for unseen classes
-            weights = torch.tensor([1.0 / class_counts[i] if i in class_counts and class_counts[i] > 0 else 1.0 for i in range(self.hparams.output_dim)], dtype=torch.float32)
-            
-            # The alpha in FocalLoss needs to be on the same device as the model
-            # We register it as a buffer so it's automatically moved to the correct device
-            self.register_buffer('alpha_weights', weights)
-            
-            self.criterion = FocalLoss(alpha=self.alpha_weights, gamma=2, reduction='mean')
-        else: # Default to cross_entropy
-            self.criterion = nn.CrossEntropyLoss()
+            # Compute weight for each sample. The weight is the inverse of its class frequency.
+            class_weights = {c: 1.0 / count for c, count in class_counts.items()}
+            self.train_sample_weights = torch.tensor([class_weights[label.item()] for label in train_labels], dtype=torch.float)
+        else:
+            self.train_sample_weights = None
 
     def train_dataloader(self):
         try:
             num_workers = multiprocessing.cpu_count()
         except:
             num_workers = 1
+
+        sampler = None
+        shuffle = True
+        if self.hparams.sampling_strategy == 'class_aware' and self.train_sample_weights is not None:
+            sampler = WeightedRandomSampler(
+                self.train_sample_weights,
+                num_samples=len(self.train_sample_weights),
+                replacement=True
+            )
+            shuffle = False # Sampler is mutually exclusive with shuffle
         
         return DataLoader(
             self.train_dataset,
             batch_size=16,
             num_workers=num_workers,
-            shuffle=True,
+            sampler=sampler,
+            shuffle=shuffle,
         )
 
     def val_dataloader(self):
@@ -684,7 +633,7 @@ class ResNet(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = self.criterion(y_hat, y)
+        loss = F.cross_entropy(y_hat, y)
         
         preds = torch.argmax(y_hat, dim=1)
         acc = torch.tensor(torch.sum(preds == y).item() / (len(y) * 1.0))
@@ -700,7 +649,7 @@ class ResNet(LightningModule):
         x, y = batch
         y_hat = self(x)
 
-        entropy = self.criterion(y_hat, y)
+        entropy = F.cross_entropy(y_hat, y)
         self.log(
             "training_loss",
             entropy,

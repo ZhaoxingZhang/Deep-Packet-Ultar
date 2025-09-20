@@ -141,6 +141,7 @@ cython_debug/
 # idea
 .idea/
 .vscode/
+.local/
 
 # unknown
 .DS_Store
