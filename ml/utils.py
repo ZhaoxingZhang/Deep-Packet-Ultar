@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 
@@ -84,6 +84,15 @@ def train_resnet(
     # seed everything
     seed_everything(seed=9876, workers=True)
 
+    # Configure ModelCheckpoint to save the best model based on val_loss
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_loss',
+        dirpath=str(model_path.parent.absolute()),
+        filename=model_path.name,
+        save_top_k=1,
+        mode='min',
+    )
+
     model = ResNet(
         c1_kernel_size=c1_kernel_size,
         c1_output_dim=c1_output_dim,
@@ -104,14 +113,14 @@ def train_resnet(
         logger=logger,
         callbacks=[
             EarlyStopping(
-                monitor="val_loss", mode="min", check_on_train_epoch_end=True
-            )
+                monitor="val_loss", mode="min", patience=5
+            ),
+            checkpoint_callback
         ],
     )
     trainer.fit(model)
 
-    # save model
-    trainer.save_checkpoint(str(model_path.absolute()))
+    # The ModelCheckpoint callback now handles saving the best model automatically.
 
 
 def train_application_classification_cnn_model(data_path, model_path):
