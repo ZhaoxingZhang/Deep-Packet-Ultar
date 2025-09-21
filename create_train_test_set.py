@@ -175,18 +175,7 @@ def create_train_test_for_task(
         print("saving test")
         save_test(test_df, data_dir_path)
         print("saving test done")
-    elif experiment_type == "fractional_sample":
-        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
-            "feature", f"{label_col} as label"
-        )
-        # Just split without any balancing
-        train_df, test_df = split_train_test(task_df, test_size, under_sampling_train=False)
-        print("saving train")
-        save_train(train_df, data_dir_path)
-        print("saving train done")
-        print("saving test")
-        save_test(test_df, data_dir_path)
-        print("saving test done")
+    
     elif experiment_type == "exp8_majority":
         majority_classes = [2, 3, 5, 10]
         task_df = df.filter(col(label_col).isNotNull()).selectExpr(
@@ -268,7 +257,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "fractional_sample", "exp8_majority", "exp8_minority"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )
@@ -345,8 +334,9 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
         # Clean up temporary directory now that the data is cached
         shutil.rmtree(temp_dir)
         
-        # Set experiment type for task processing
-        experiment_type = "fractional_sample"
+        # The user-provided experiment_type should be respected.
+        # The --fraction flag is only for initial data sampling.
+        pass
 
     else:
         # Original logic for other experiments that load the entire dataset
