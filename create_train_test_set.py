@@ -187,6 +187,50 @@ def create_train_test_for_task(
         print("saving test")
         save_test(test_df, data_dir_path)
         print("saving test done")
+    elif experiment_type == "exp8_majority":
+        majority_classes = [2, 3, 5, 10]
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+        filtered_df = task_df.filter(col('label').isin(majority_classes))
+        
+        label_mapping = {original_label: i for i, original_label in enumerate(sorted(majority_classes))}
+        from pyspark.sql.functions import create_map
+        from itertools import chain
+        mapping_expr = create_map([lit(x) for x in chain(*label_mapping.items())])
+        
+        mapped_df = filtered_df.withColumn("label", mapping_expr[col("label")])
+        
+        train_df, test_df = split_train_test(mapped_df, test_size, under_sampling_train=False)
+        
+        print("--- Creating dataset for MAJORITY expert ---")
+        print(f"Original classes: {majority_classes}")
+        print(f"Remapped to: {list(label_mapping.values())}")
+        save_train(train_df, data_dir_path)
+        save_test(test_df, data_dir_path)
+        print("------------------------------------------")
+    elif experiment_type == "exp8_minority":
+        minority_classes = [0, 1, 4, 6, 7, 8, 9, 11, 12, 13, 14]
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+        filtered_df = task_df.filter(col('label').isin(minority_classes))
+        
+        label_mapping = {original_label: i for i, original_label in enumerate(sorted(minority_classes))}
+        from pyspark.sql.functions import create_map
+        from itertools import chain
+        mapping_expr = create_map([lit(x) for x in chain(*label_mapping.items())])
+        
+        mapped_df = filtered_df.withColumn("label", mapping_expr[col("label")])
+        
+        train_df, test_df = split_train_test(mapped_df, test_size, under_sampling_train=False)
+
+        print("--- Creating dataset for MINORITY expert ---")
+        print(f"Original classes: {minority_classes}")
+        print(f"Remapped to: {list(label_mapping.values())}")
+        save_train(train_df, data_dir_path)
+        save_test(test_df, data_dir_path)
+        print("------------------------------------------")
 
 
 def print_df_label_distribution(spark, path):
@@ -224,7 +268,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "fractional_sample"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "fractional_sample", "exp8_majority", "exp8_minority"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )
@@ -284,8 +328,12 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
             print(f"Processing batch {i//batch_size + 1}/{-(-len(all_files)//batch_size)}...")
             batch_df = spark.read.schema(schema).json(batch_files)
             sampled_batch_df = batch_df.sample(fraction=fraction, seed=42)
-            if sampled_batch_df.count() > 0:
-                sampled_batch_df.write.mode("append").parquet(temp_dir.absolute().as_uri())
+
+            # Coalesce into a single partition to avoid issues with empty partitions
+            coalesced_df = sampled_batch_df.coalesce(1)
+
+            if coalesced_df.count() > 0:
+                coalesced_df.write.mode("append").parquet(temp_dir.absolute().as_uri())
 
         print("Consolidating sampled data...")
         df = spark.read.parquet(temp_dir.absolute().as_uri())
