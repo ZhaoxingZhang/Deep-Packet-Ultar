@@ -1,0 +1,18 @@
+# Configuration for the Mixture of Experts (MoE) model
+
+# --- Expert Model Paths ---
+generalist_expert_path: "model/application_classification.resnet.exp5.baseline.model"
+minority_expert_path: "model/expert_minor.model"
+
+# --- Class Definitions ---
+num_total_classes: 15
+# Majority classes are those with > 3000 samples in the exp5 dataset
+majority_classes: [2, 3, 5, 10]
+# Minority classes are all others
+minority_classes: [0, 1, 4, 6, 7, 8, 9, 11, 12, 13, 14]
+
+# --- Model Hyperparameters ---
+signal_length: 1500
+
+# --- Training Parameters ---
+data_path: "train_test_data/exp5_fractional_1_600/application_classification"

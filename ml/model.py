@@ -221,7 +221,45 @@ class CustomMaxPool1d(nn.Module):
         return net
 
 
+class GatingNetwork(nn.Module):
+    """
+    A lightweight CNN to act as a router for the Mixture of Experts model.
+    It performs a binary classification to decide which expert to use.
+    """
+    def __init__(self, signal_length=1500):
+        super().__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=8, stride=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=8, stride=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        
+        # Calculate the output size after conv layers
+        dummy_x = torch.rand(1, 1, signal_length, requires_grad=False)
+        dummy_x = self.conv1(dummy_x)
+        dummy_x = self.conv2(dummy_x)
+        flattened_size = dummy_x.view(1, -1).shape[1]
 
+        self.fc1 = nn.Linear(flattened_size, 100)
+        self.out = nn.Linear(100, 2) # Output for 2 experts (Generalist vs. Specialist)
+
+    def forward(self, x):
+        # Add channel dimension if not present, which is expected by Conv1d
+        if len(x.shape) == 2:
+            x = x.unsqueeze(1)
+
+        batch_size = x.shape[0]
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x.reshape(batch_size, -1)
+        x = F.relu(self.fc1(x))
+        x = self.out(x)
+        return x
 
 
 class BasicBlock(nn.Module):
@@ -643,7 +681,20 @@ class ResNet(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters())
+        optimizer = torch.optim.Adam(self.parameters())
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            'min',
+            patience=3, # Scheduler patience is different from EarlyStopping patience
+            verbose=True
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+            },
+        }
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -659,3 +710,108 @@ class ResNet(LightningModule):
             on_epoch=True,
         )
         return entropy
+
+class MixtureOfExperts(LightningModule):
+    def __init__(self, generalist_expert, minority_expert, num_total_classes, majority_classes, minority_classes):
+        super().__init__()
+        self.save_hyperparameters(ignore=['generalist_expert', 'minority_expert'])
+
+        self.generalist_expert = generalist_expert
+        self.minority_expert = minority_expert
+        self.gating_network = GatingNetwork()
+
+        # Mappings for labels
+        self.num_total_classes = num_total_classes
+        self.majority_classes = sorted(majority_classes)
+        self.minority_classes = sorted(minority_classes)
+
+        # Create reverse mappings from expert-local output index to global class index
+        self.majority_map = {i: global_idx for i, global_idx in enumerate(self.majority_classes)}
+        self.minority_map = {i: global_idx for i, global_idx in enumerate(self.minority_classes)}
+
+    def forward(self, x):
+        # Gating network decides which expert to use
+        gate_logits = self.gating_network(x)
+        
+        # For inference/validation, we might want to route to the chosen expert
+        # For training the gate, we just need the gate's output.
+        # The training_step will handle the logic.
+        return gate_logits
+
+    def training_step(self, batch, batch_idx):
+        x, y_global = batch
+        
+        # 1. Get gating network's prediction
+        gate_logits = self.gating_network(x)
+
+        # 2. Determine the "true" expert for each sample
+        # Create a tensor of minority classes for efficient lookup
+        minority_classes_tensor = torch.tensor(self.minority_classes, device=y_global.device)
+        # y_meta is 1 if the class is in minority_classes, 0 otherwise
+        y_meta = torch.isin(y_global, minority_classes_tensor).long()
+
+        # 3. Calculate loss for the gating network
+        gate_loss = F.cross_entropy(gate_logits, y_meta)
+        self.log('train_gate_loss', gate_loss, on_step=True, on_epoch=True, prog_bar=True)
+        
+        return gate_loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y_global = batch
+        
+        # Gate output
+        gate_logits = self.gating_network(x)
+        gate_preds = torch.argmax(gate_logits, dim=1)
+
+        # Meta labels
+        minority_classes_tensor = torch.tensor(self.minority_classes, device=y_global.device)
+        y_meta = torch.isin(y_global, minority_classes_tensor).long()
+
+        # Gate validation loss and accuracy
+        val_gate_loss = F.cross_entropy(gate_logits, y_meta)
+        val_gate_acc = torch.sum(gate_preds == y_meta).item() / (len(y_meta) * 1.0)
+        
+        self.log('val_loss', val_gate_loss, prog_bar=True) # val_loss is monitored by callbacks
+        self.log('val_gate_acc', val_gate_acc, prog_bar=True)
+
+        # --- Full MoE validation logic (for later phases) ---
+        # This part combines expert outputs for a full prediction
+        with torch.no_grad():
+            # Get expert predictions
+            # Unsqueeze(1) is needed if experts expect a channel dimension
+            if len(x.shape) == 2:
+                 x_exp = x.unsqueeze(1)
+            else:
+                 x_exp = x
+            generalist_logits = self.generalist_expert(x_exp)
+            minority_logits = self.minority_expert(x_exp)
+
+            # Combine predictions based on gate
+            final_logits = torch.zeros((x.shape[0], self.num_total_classes), device=x.device)
+            
+            for i in range(x.shape[0]):
+                if gate_preds[i] == 0: # Route to generalist
+                    for local_idx, global_idx in self.majority_map.items():
+                        final_logits[i, global_idx] = generalist_logits[i, local_idx]
+                else: # Route to minority
+                    for local_idx, global_idx in self.minority_map.items():
+                        final_logits[i, global_idx] = minority_logits[i, local_idx]
+
+            moe_preds = torch.argmax(final_logits, dim=1)
+            val_moe_acc = torch.sum(moe_preds == y_global).item() / (len(y_global) * 1.0)
+            self.log('val_moe_acc', val_moe_acc, prog_bar=True)
+
+        return val_gate_loss
+
+    def configure_optimizers(self):
+        # By default, this will grab all parameters in the module
+        # We will freeze the experts in the training script
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, verbose=True)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+            },
+        }

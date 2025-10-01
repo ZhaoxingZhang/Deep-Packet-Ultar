@@ -113,7 +113,7 @@ def train_resnet(
         logger=logger,
         callbacks=[
             EarlyStopping(
-                monitor="val_loss", mode="min", patience=5
+                monitor="val_loss", mode="min", patience=20
             ),
             checkpoint_callback
         ],
