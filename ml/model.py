@@ -730,37 +730,40 @@ class MixtureOfExperts(LightningModule):
         self.minority_map = {i: global_idx for i, global_idx in enumerate(self.minority_classes)}
 
     def forward(self, x):
-        # Gating network decides which expert to use
-        gate_logits = self.gating_network(x)
-        gate_preds = torch.argmax(gate_logits, dim=1)
+        # --- Soft Routing Implementation ---
 
-        # Get expert predictions
-        # Unsqueeze(1) is needed if experts expect a channel dimension
+        # 1. Get gate probabilities
+        gate_logits = self.gating_network(x)
+        gate_probs = F.softmax(gate_logits, dim=1) # Shape: [batch_size, 2]
+
+        # 2. Get expert predictions
         if len(x.shape) == 2:
             x_exp = x.unsqueeze(1)
         else:
             x_exp = x
         
-        # Experts should be in eval mode for inference
         self.generalist_expert.eval()
         self.minority_expert.eval()
         with torch.no_grad():
-            generalist_logits = self.generalist_expert(x_exp)
-            minority_logits = self.minority_expert(x_exp)
+            generalist_logits_15_classes = self.generalist_expert(x_exp)
+            minority_logits_11_classes = self.minority_expert(x_exp)
 
-        # Initialize final logits with a very small number
-        final_logits = torch.full((x.shape[0], self.num_total_classes), -1e9, device=x.device)
+        # 3. Project minority expert output to 15-class space
+        minority_logits_15_classes = torch.zeros_like(generalist_logits_15_classes) # Use zeros for proper weighting
+        for local_idx, global_idx in self.minority_map.items():
+            minority_logits_15_classes[:, global_idx] = minority_logits_11_classes[:, local_idx]
 
-        for i in range(x.shape[0]):
-            if gate_preds[i] == 0:  # Route to generalist
-                # Trust the generalist only for majority classes
-                for global_idx in self.majority_classes:
-                    final_logits[i, global_idx] = generalist_logits[i, global_idx]
-            else:  # Route to minority
-                # Map minority expert's local predictions to global space
-                for local_idx, global_idx in self.minority_map.items():
-                    final_logits[i, global_idx] = minority_logits[i, local_idx]
-        
+        # 4. Weight the expert logits by the gate probabilities
+        # Unsqueeze gate_probs to allow broadcasting
+        # gate_probs[:, 0] is for generalist, gate_probs[:, 1] is for minority
+        weighted_generalist = generalist_logits_15_classes * gate_probs[:, 0].unsqueeze(-1)
+        weighted_minority = minority_logits_15_classes * gate_probs[:, 1].unsqueeze(-1)
+
+        # 5. Combine the weighted logits
+        # Since we initialized the projected minority logits with a large negative number,
+        # a simple sum combines the relevant parts from each expert.
+        final_logits = weighted_generalist + weighted_minority
+
         return final_logits
 
     def training_step(self, batch, batch_idx):
