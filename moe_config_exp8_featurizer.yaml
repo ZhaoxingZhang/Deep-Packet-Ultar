@@ -13,6 +13,7 @@ minority_classes: [0, 1, 4, 6, 7, 8, 9, 11, 12, 13, 14]
 
 # --- Model Hyperparameters ---
 signal_length: 1500
+patience: 20 # 
 
 # --- Training Parameters ---
 data_path: "/home/featurize/data/train_test_data/exp5_fractional_1_600/application_classification"

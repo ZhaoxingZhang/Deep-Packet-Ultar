@@ -129,7 +129,8 @@ def main(config_path):
         save_top_k=1,
         mode='min',
     )
-    early_stop_callback = EarlyStopping(monitor="val_loss", patience=10, verbose=True, mode="min")
+    early_stop_patience = config.get('early_stopping_patience', 10)
+    early_stop_callback = EarlyStopping(monitor="val_loss", patience=early_stop_patience, verbose=True, mode="min")
 
     # Configure and run trainer
     trainer = Trainer(

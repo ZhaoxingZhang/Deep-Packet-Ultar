@@ -786,14 +786,16 @@ class MixtureOfExperts(LightningModule):
             generalist_logits = self.generalist_expert(x_exp)
             minority_logits = self.minority_expert(x_exp)
 
-            # Combine predictions based on gate
-            final_logits = torch.zeros((x.shape[0], self.num_total_classes), device=x.device)
-            
+            # Initialize final logits with a very small number
+            final_logits = torch.full((x.shape[0], self.num_total_classes), -1e9, device=x.device)
+
             for i in range(x.shape[0]):
-                if gate_preds[i] == 0: # Route to generalist
-                    for local_idx, global_idx in self.majority_map.items():
-                        final_logits[i, global_idx] = generalist_logits[i, local_idx]
-                else: # Route to minority
+                if gate_preds[i] == 0:  # Route to generalist
+                    # Trust the generalist only for majority classes
+                    for global_idx in self.majority_classes:
+                        final_logits[i, global_idx] = generalist_logits[i, global_idx]
+                else:  # Route to minority
+                    # Map minority expert's local predictions to global space
                     for local_idx, global_idx in self.minority_map.items():
                         final_logits[i, global_idx] = minority_logits[i, local_idx]
 
