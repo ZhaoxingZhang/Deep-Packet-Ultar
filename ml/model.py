@@ -732,11 +732,36 @@ class MixtureOfExperts(LightningModule):
     def forward(self, x):
         # Gating network decides which expert to use
         gate_logits = self.gating_network(x)
+        gate_preds = torch.argmax(gate_logits, dim=1)
+
+        # Get expert predictions
+        # Unsqueeze(1) is needed if experts expect a channel dimension
+        if len(x.shape) == 2:
+            x_exp = x.unsqueeze(1)
+        else:
+            x_exp = x
         
-        # For inference/validation, we might want to route to the chosen expert
-        # For training the gate, we just need the gate's output.
-        # The training_step will handle the logic.
-        return gate_logits
+        # Experts should be in eval mode for inference
+        self.generalist_expert.eval()
+        self.minority_expert.eval()
+        with torch.no_grad():
+            generalist_logits = self.generalist_expert(x_exp)
+            minority_logits = self.minority_expert(x_exp)
+
+        # Initialize final logits with a very small number
+        final_logits = torch.full((x.shape[0], self.num_total_classes), -1e9, device=x.device)
+
+        for i in range(x.shape[0]):
+            if gate_preds[i] == 0:  # Route to generalist
+                # Trust the generalist only for majority classes
+                for global_idx in self.majority_classes:
+                    final_logits[i, global_idx] = generalist_logits[i, global_idx]
+            else:  # Route to minority
+                # Map minority expert's local predictions to global space
+                for local_idx, global_idx in self.minority_map.items():
+                    final_logits[i, global_idx] = minority_logits[i, local_idx]
+        
+        return final_logits
 
     def training_step(self, batch, batch_idx):
         x, y_global = batch
@@ -759,49 +784,25 @@ class MixtureOfExperts(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y_global = batch
         
-        # Gate output
+        # Get final stitched logits from the forward method
+        final_logits = self(x)
+        moe_preds = torch.argmax(final_logits, dim=1)
+
+        # --- Gate validation ---
+        # We need gate_logits, let's get it from the gating_network directly
         gate_logits = self.gating_network(x)
         gate_preds = torch.argmax(gate_logits, dim=1)
-
-        # Meta labels
         minority_classes_tensor = torch.tensor(self.minority_classes, device=y_global.device)
         y_meta = torch.isin(y_global, minority_classes_tensor).long()
-
-        # Gate validation loss and accuracy
         val_gate_loss = F.cross_entropy(gate_logits, y_meta)
         val_gate_acc = torch.sum(gate_preds == y_meta).item() / (len(y_meta) * 1.0)
         
         self.log('val_loss', val_gate_loss, prog_bar=True) # val_loss is monitored by callbacks
         self.log('val_gate_acc', val_gate_acc, prog_bar=True)
 
-        # --- Full MoE validation logic (for later phases) ---
-        # This part combines expert outputs for a full prediction
-        with torch.no_grad():
-            # Get expert predictions
-            # Unsqueeze(1) is needed if experts expect a channel dimension
-            if len(x.shape) == 2:
-                 x_exp = x.unsqueeze(1)
-            else:
-                 x_exp = x
-            generalist_logits = self.generalist_expert(x_exp)
-            minority_logits = self.minority_expert(x_exp)
-
-            # Initialize final logits with a very small number
-            final_logits = torch.full((x.shape[0], self.num_total_classes), -1e9, device=x.device)
-
-            for i in range(x.shape[0]):
-                if gate_preds[i] == 0:  # Route to generalist
-                    # Trust the generalist only for majority classes
-                    for global_idx in self.majority_classes:
-                        final_logits[i, global_idx] = generalist_logits[i, global_idx]
-                else:  # Route to minority
-                    # Map minority expert's local predictions to global space
-                    for local_idx, global_idx in self.minority_map.items():
-                        final_logits[i, global_idx] = minority_logits[i, local_idx]
-
-            moe_preds = torch.argmax(final_logits, dim=1)
-            val_moe_acc = torch.sum(moe_preds == y_global).item() / (len(y_global) * 1.0)
-            self.log('val_moe_acc', val_moe_acc, prog_bar=True)
+        # --- Full MoE validation ---
+        val_moe_acc = torch.sum(moe_preds == y_global).item() / (len(y_global) * 1.0)
+        self.log('val_moe_acc', val_moe_acc, prog_bar=True)
 
         return val_gate_loss
 

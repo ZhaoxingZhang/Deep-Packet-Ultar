@@ -14,6 +14,7 @@ from ml.utils import (
     load_application_classification_cnn_model,
     load_application_classification_resnet_model,
 )
+from ml.model import MixtureOfExperts # Import the new model type
 
 def load_data(data_path):
     table = pq.read_table(data_path)
@@ -41,7 +42,7 @@ def get_output_dir_from_model_path(model_path):
 @click.option("-m", "--model_path", required=True, help="Path to the trained model checkpoint.")
 @click.option("-d", "--data_path", required=True, help="Path to the test data parquet directory.")
 @click.option("-o", "--output_dir", help="Directory to save evaluation results. If not provided, will be derived from model path.")
-@click.option("--model_type", default="cnn", help="Type of model to load: 'cnn' or 'resnet'.")
+@click.option("--model_type", default="cnn", help="Type of model to load: 'cnn', 'resnet', or 'moe'.")
 def evaluate(model_path, data_path, output_dir, model_type):
     """Evaluates a trained model on the given test set."""
     # 如果没有指定输出目录，从模型路径自动生成
@@ -57,6 +58,8 @@ def evaluate(model_path, data_path, output_dir, model_type):
         model = load_application_classification_cnn_model(model_path)
     elif model_type == 'resnet':
         model = load_application_classification_resnet_model(model_path)
+    elif model_type == 'moe':
+        model = MixtureOfExperts.load_from_checkpoint(model_path)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
     model.eval()
