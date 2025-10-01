@@ -9,12 +9,13 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import seaborn as sns
 import matplotlib.pyplot as plt
+from ruamel.yaml import YAML
 
-from ml.utils import (
-    load_application_classification_cnn_model,
-    load_application_classification_resnet_model,
-)
-from ml.model import MixtureOfExperts # Import the new model type
+# Make sure the ml module is in the python path
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from ml.model import MixtureOfExperts, ResNet
 
 def load_data(data_path):
     table = pq.read_table(data_path)
@@ -23,6 +24,7 @@ def load_data(data_path):
     features = torch.from_numpy(np.array(df['feature'].tolist(), dtype=np.float32))
     labels = torch.from_numpy(np.array(df['label'].tolist(), dtype=np.int64))
     
+    # The model expects a channel dimension, so we add it.
     if len(features.shape) == 2:
         features = features.unsqueeze(1)
         
@@ -32,43 +34,51 @@ def load_data(data_path):
 
 def get_output_dir_from_model_path(model_path):
     """从模型路径提取输出目录"""
-    # 获取模型文件名（不含扩展名）
     model_name = os.path.splitext(os.path.basename(model_path))[0]
-    # 输出目录为model/{model_name}
     output_dir = os.path.join("evaluation_results", model_name)
     return output_dir
 
 @click.command()
 @click.option("-m", "--model_path", required=True, help="Path to the trained model checkpoint.")
-@click.option("-d", "--data_path", required=True, help="Path to the test data parquet directory.")
+@click.option("-d", "--data_path", required=True, help="Path to the test data parquet file.")
 @click.option("-o", "--output_dir", help="Directory to save evaluation results. If not provided, will be derived from model path.")
-@click.option("--model_type", default="cnn", help="Type of model to load: 'cnn', 'resnet', or 'moe'.")
-def evaluate(model_path, data_path, output_dir, model_type):
+@click.option("--model_type", default="cnn", type=click.Choice(['cnn', 'resnet', 'moe']), help="Type of model to load.")
+@click.option("--moe_config_path", default="moe_config.yaml", help="Path to the MoE YAML config file (required for model_type='moe').")
+def evaluate(model_path, data_path, output_dir, model_type, moe_config_path):
     """Evaluates a trained model on the given test set."""
-    # 如果没有指定输出目录，从模型路径自动生成
     if output_dir is None:
         output_dir = get_output_dir_from_model_path(model_path)
     
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load model
     print(f"Loading {model_type} model from {model_path}...")
     if model_type == 'cnn':
-        model = load_application_classification_cnn_model(model_path)
+        raise NotImplementedError("CNN loading not implemented in this version.")
     elif model_type == 'resnet':
-        model = load_application_classification_resnet_model(model_path)
+        raise NotImplementedError("ResNet loading not implemented in this version.")
     elif model_type == 'moe':
-        model = MixtureOfExperts.load_from_checkpoint(model_path)
+        yaml = YAML(typ='safe')
+        with open(moe_config_path, 'r') as f:
+            config = yaml.load(f)
+        
+        print(f"Loading Generalist expert from: {config['generalist_expert_path']}")
+        generalist_expert = ResNet.load_from_checkpoint(config['generalist_expert_path'])
+        print(f"Loading Minority expert from: {config['minority_expert_path']}")
+        minority_expert = ResNet.load_from_checkpoint(config['minority_expert_path'])
+
+        model = MixtureOfExperts.load_from_checkpoint(
+            model_path,
+            generalist_expert=generalist_expert,
+            minority_expert=minority_expert
+        )
     else:
         raise ValueError(f"Unknown model type: {model_type}")
+    
     model.eval()
 
-    # Load data
     print(f"Loading data from {data_path}...")
     test_dataloader = load_data(data_path)
 
-    # Run predictions
     print("Running predictions...")
     all_preds = []
     all_labels = []
@@ -79,7 +89,6 @@ def evaluate(model_path, data_path, output_dir, model_type):
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
-    # Calculate metrics
     print("Calculating metrics...")
     accuracy = accuracy_score(all_labels, all_preds)
     report = classification_report(all_labels, all_preds, zero_division=0)
@@ -90,16 +99,14 @@ def evaluate(model_path, data_path, output_dir, model_type):
     print("\nClassification Report:")
     print(report)
     
-    # Save results to file
     results_file = os.path.join(output_dir, "evaluation_summary.txt")
     with open(results_file, 'w') as f:
-        f.write("--- Evaluation Results ---\n")
+        f.write("--- Evaluation Results ---")
         f.write(f"Accuracy: {accuracy:.4f}\n")
         f.write("\nClassification Report:\n")
         f.write(report)
     print(f"\nResults saved to {results_file}")
 
-    # Plot and save confusion matrix
     plt.figure(figsize=(15, 12))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
     plt.title('Confusion Matrix')
