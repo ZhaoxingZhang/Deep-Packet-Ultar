@@ -807,14 +807,13 @@ class MixtureOfExperts(LightningModule):
         return val_gate_loss
 
     def configure_optimizers(self):
-        # By default, this will grab all parameters in the module
-        # We will freeze the experts in the training script
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, verbose=True)
+        # Optimizer for fine-tuning with a lower learning rate
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=3, verbose=True)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",
+                "monitor": "val_moe_acc", # Monitor the metric we care about
             },
         }

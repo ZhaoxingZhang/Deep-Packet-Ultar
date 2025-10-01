@@ -85,7 +85,8 @@ class MoEDataModule(LightningDataModule):
 
 @click.command()
 @click.option('--config', '-c', 'config_path', required=True, type=click.Path(exists=True), help='Path to the MoE YAML config file.')
-def main(config_path):
+@click.option('--ckpt_path', 'ckpt_path', required=False, type=click.Path(exists=True), help='Path to a checkpoint to resume training from.')
+def main(config_path, ckpt_path):
     # Load config using ruamel.yaml
     yaml = YAML(typ='safe')
     with open(config_path, 'r') as f:
@@ -106,31 +107,23 @@ def main(config_path):
         minority_classes=config['minority_classes']
     )
 
-    # --- Freeze experts for Phase 2: Gating Network Training ---
-    print("Freezing expert weights...")
-    for param in moe_model.generalist_expert.parameters():
-        param.requires_grad = False
-    for param in moe_model.minority_expert.parameters():
-        param.requires_grad = False
-    print("Expert weights frozen.")
-    # Verify that only gating network parameters are trainable
+    # For fine-tuning, all parameters are trainable.
     trainable_params = sum(p.numel() for p in moe_model.parameters() if p.requires_grad)
-    print(f"Number of trainable parameters: {trainable_params}")
-    # -----------------------------------------------------------
+    print(f"Starting fine-tuning with {trainable_params} trainable parameters.")
 
     # Instantiate the DataModule
     data_module = MoEDataModule(config)
 
     # Configure callbacks
     checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',
+        monitor='val_moe_acc', # Monitor the overall MoE accuracy for fine-tuning
         dirpath='model',
-        filename='moe_gate',
+        filename='moe_final',
         save_top_k=1,
-        mode='min',
+        mode='max', # We want to maximize accuracy
     )
     early_stop_patience = config.get('early_stopping_patience', 10)
-    early_stop_callback = EarlyStopping(monitor="val_loss", patience=early_stop_patience, verbose=True, mode="min")
+    early_stop_callback = EarlyStopping(monitor="val_moe_acc", patience=early_stop_patience, verbose=True, mode="max")
 
     # Configure and run trainer
     trainer = Trainer(
@@ -140,9 +133,9 @@ def main(config_path):
         devices='auto'
     )
     
-    print("--- Starting MoE Gating Network Training ---")
-    trainer.fit(moe_model, datamodule=data_module)
-    print("--- MoE Gating Network Training Finished ---")
+    print("--- Starting MoE End-to-End Fine-tuning ---")
+    trainer.fit(moe_model, datamodule=data_module, ckpt_path=ckpt_path)
+    print("--- MoE Fine-tuning Finished ---")
 
 
 if __name__ == '__main__':
