@@ -220,6 +220,33 @@ def create_train_test_for_task(
         save_train(train_df, data_dir_path)
         save_test(test_df, data_dir_path)
         print("------------------------------------------")
+    elif experiment_type == "exp_open_set":
+        known_classes = [2, 3, 5, 1, 7, 8, 9, 11, 13, 14]
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+
+        # Split the full dataset to get a representative test set
+        train_df_full, test_df = split_train_test(task_df, test_size, under_sampling_train=False)
+
+        # The training set should only contain known classes
+        train_df = train_df_full.filter(col('label').isin(known_classes))
+
+        # Remap labels for the training set to be contiguous from 0-9
+        label_mapping = {original_label: i for i, original_label in enumerate(sorted(known_classes))}
+        from pyspark.sql.functions import create_map
+        from itertools import chain
+        mapping_expr = create_map([lit(x) for x in chain(*label_mapping.items())])
+        
+        train_df = train_df.withColumn("label", mapping_expr[col("label")])
+
+        print("--- Creating dataset for Open-Set experiment ---")
+        print(f"Known classes: {known_classes}")
+        print(f"Training set will be remapped to: {list(label_mapping.values())}")
+        print("Test set will contain all original 15 classes.")
+        save_train(train_df, data_dir_path)
+        save_test(test_df, data_dir_path)
+        print("---------------------------------------------")
 
 
 def print_df_label_distribution(spark, path):
@@ -257,7 +284,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )
