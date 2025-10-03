@@ -65,10 +65,16 @@ def get_predictions(model, dataloader, model_type):
         "gate_outputs": all_gate_outputs if model_type == 'moe' else None
     }
 
-def calculate_rejection_curve(labels, confidence_scores, predictions, known_classes):
+def calculate_rejection_curve(labels, confidence_scores, predictions, known_classes_original):
     """Calculates the accuracy-rejection curve."""
-    # Ensure tensors are on CPU
-    labels = labels.cpu()
+    # 1. Create the mapping from original labels to remapped 0-(N-1) labels
+    label_mapping = {original: i for i, original in enumerate(sorted(known_classes_original))}
+    
+    # 2. Remap the true labels tensor. Unknowns become -1.
+    remapped_labels = torch.tensor([label_mapping.get(l.item(), -1) for l in labels])
+
+    # Ensure all tensors are on CPU
+    remapped_labels = remapped_labels.cpu()
     confidence_scores = confidence_scores.cpu()
     predictions = predictions.cpu()
 
@@ -91,16 +97,18 @@ def calculate_rejection_curve(labels, confidence_scores, predictions, known_clas
         if num_accepted == 0:
             accuracy_on_accepted = 0.0
         else:
-            accepted_labels = labels[accepted_mask]
+            # Use the remapped labels for accuracy calculation
+            accepted_remapped_labels = remapped_labels[accepted_mask]
             accepted_preds = predictions[accepted_mask]
             
-            # Accuracy is calculated only on KNOWN classes that were accepted
-            is_known_accepted_mask = torch.isin(accepted_labels, torch.tensor(known_classes, dtype=labels.dtype))
+            # Accuracy is calculated only on KNOWN classes that were accepted.
+            # In the remapped space, known classes are all >= 0.
+            is_known_accepted_mask = accepted_remapped_labels >= 0
             
             if is_known_accepted_mask.sum().item() == 0:
                 accuracy_on_accepted = 0.0
             else:
-                correct_predictions = (accepted_preds[is_known_accepted_mask] == accepted_labels[is_known_accepted_mask]).sum().item()
+                correct_predictions = (accepted_preds[is_known_accepted_mask] == accepted_remapped_labels[is_known_accepted_mask]).sum().item()
                 accuracy_on_accepted = correct_predictions / is_known_accepted_mask.sum().item()
 
         curve_points.append({"threshold": tau, "rejection_rate": rejection_rate, "accuracy": accuracy_on_accepted})
