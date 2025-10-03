@@ -1,0 +1,30 @@
+# Configuration for the Open-Set MoE Experiment (Experiment A)
+
+# --- Data Paths ---
+data_path: ' /home/featurize/datatrain_test_data/exp_open_set/'
+
+# --- Model Paths ---
+# Experts trained specifically on the 10 known classes
+generalist_expert_path: 'model/open_set_majority_expert.model'
+minority_expert_path: 'model/open_set_minority_expert.model'
+
+# --- Model Architecture ---
+num_total_classes: 10 # We are training on a 10-class problem
+
+# --- Class Definitions ---
+# NOTE: These are the REMAPPED labels after sorting the original known classes
+# Original Known: [1, 2, 3, 5, 7, 8, 9, 11, 13, 14] -> Remapped to 0-9
+# Original Majority: [2, 3, 5] -> Remapped to [1, 2, 3]
+# Original Minority: [1, 7, 8, 9, 11, 13, 14] -> Remapped to [0, 4, 5, 6, 7, 8, 9]
+majority_classes: [1, 2, 3]
+minority_classes: [0, 4, 5, 6, 7, 8, 9]
+
+# Original labels of the known classes, needed for the evaluation script
+known_classes: [1, 2, 3, 5, 7, 8, 9, 11, 13, 14]
+
+# --- Training Hyperparameters ---
+batch_size: 16
+validation_split: 0.1
+num_workers: 4
+max_epochs: 30
+early_stopping_patience: 10

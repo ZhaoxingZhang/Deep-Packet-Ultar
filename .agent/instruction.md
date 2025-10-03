@@ -86,9 +86,70 @@
 
 ---
 
+## 3. Project Changelog
+
+**--- Update (2025-10-01) ---**
+
+*   **`create_train_test_set.py`**:
+    *   **Added `exp_open_set` mode**: Creates a training set with 10 specific "known" classes and a test set with all 15 classes to simulate an open-set environment.
+    *   **Added `exp_open_set_majority` mode**: Creates a dataset containing only the 3 "majority" classes from the known set (`[2, 3, 5]`)
+    *   **Added `exp_open_set_minority` mode**: Creates a dataset containing only the 7 "minority" classes from the known set (`[1, 7, 8, 9, 11, 13, 14]`)
+*   **`evaluate_open_set.py`**:
+    *   **Created new file**: A dedicated script to evaluate open-set recognition performance. It implements three distinct rejection strategies (Baseline-Softmax, MoE-Softmax, MoE-Gate) and generates data for "Accuracy-Rejection" curves.
+
+---
+
 ## 4. Progress Reports
 
 # 研究进展报告
+**--- Update (2025-10-01) ---**
+    
+### **实验A (开放集识别) 进展与设计详述**
+
+此部分详细阐述我们为验证论文第一个核心创新点（开放集识别）所设计的实验A的完整逻辑和当前进展。
+
+#### **核心创新的深化**
+
+在初步讨论后，我们一致认为，简单地在模型最终输出上应用一个Softmax阈值作为“拒绝选项”，虽然有一定效果，但技术创新性不足，且未能利用MoE架构的独特性。
+
+为此，我们将核心创新点深化为：**发掘并验证MoE架构的门控网络（Gating Network）作为一种高级“新颖性信号”（Novelty Signal）的潜力。**
+
+我们的核心假设是：当一个模型从未见过的“未知类”样本输入时，门控网络的不确定性（表现为输出概率分布的熵增高或最大置信度降低）是比最终分类层更灵敏、更准确的“未知”指示器。这是因为最终分
+    类层的不确定性通常表现为在多个“已知类”之间混淆，而门控网络的不确定性则更可能表示样本不属于任何一个已知的元类别（例如“多数类”或“少数类”），是更高维度的“无知”信号。
+
+#### **实验设计**
+
+为验证上述假设，实验A的核心目标是**对比不同新颖性信号的质量**。
+
+*   **对比策略**:
+    1.  **基准策略 (Baseline-Softmax)**: 在标准的ResNet基准模型上，使用其最终Softmax输出的置信度进行拒绝。
+    2.  **MoE-Softmax策略**: 在我们训练的MoE模型上，同样使用其最终Softmax输出的置信度进行拒绝。
+    3.  **MoE-Gate策略 (核心验证)**: 在MoE模型上，使用其**门控网络**输出的置信度进行拒绝。
+
+*   **数据集**:
+    *   **已知类 (10个)**: `[2, 3, 5, 1, 7, 8, 9, 11, 13, 14]`
+    *   **未知类 (5个)**: `[10, 0, 4, 6, 12]`
+    *   **设计考量**: 我们特意将一个“多数类”（类别10）放入“未知类”中。如果模型能成功将在训练中常见的类别识别为“未知”，将极大增强我们结论的说服力。
+
+*   **评估指标**: 为上述三种策略分别绘制“准确率-拒绝率”曲线，并进行对比。我们期望证明“MoE-Gate策略”的曲线显著优于其他两者。
+
+**--- Update (2025-10-01) ---**
+
+### **实验A (开放集识别) 进展**
+
+我们已经正式启动了针对论文**创新点一：开放集识别**的验证实验。
+
+*   **核心创新点深化**: 我们将创新点从简单的“阈值拒绝”深化为“**发掘并验证MoE门控网络作为高级新颖性信号的潜力**”。实验将对比三种拒绝策略（基准模型Softmax、MoE模型Softmax、MoE门控网络不确定性），以证明MoE架构的内在优势。
+
+*   **数据集设计**:
+    *   **已知类 (10个)**: `[2, 3, 5, 1, 7, 8, 9, 11, 13, 14]`
+    *   **未知类 (5个)**: `[10, 0, 4, 6, 12]` (包含一个多数类`10`以增强实验说服力)
+
+*   **脚本准备**:
+    *   `create_train_test_set.py` 已被修改，增加了`exp_open_set`, `exp_open_set_majority`, `exp_open_set_minority`三种模式以生成所需数据集。
+    *   `evaluate_open_set.py` 已作为新脚本创建，用于执行我们定制的开放集评估逻辑。
+
+*   **当前状态**: 正在等待数据集生成。一旦数据就绪，我们将按计划分阶段训练基准模型、两个新专家模型，并最终微调MoE模型，然后使用新脚本进行评估。
 
 **--- Update (2025-10-01) ---**
 
