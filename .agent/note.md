@@ -1,0 +1,2 @@
+- model/open_set_minority_expert.model-v1.ckpt是表现更好的那个
+- model后都有.ckpt后缀
