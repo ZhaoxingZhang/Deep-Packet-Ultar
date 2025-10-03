@@ -5,8 +5,8 @@ data_path: 'train_test_data/exp_open_set/'
 
 # --- Model Paths ---
 # Experts trained specifically on the 10 known classes
-generalist_expert_path: 'model/open_set_majority_expert.model'
-minority_expert_path: 'model/open_set_minority_expert.model'
+generalist_expert_path: 'model/exp_open_set_majority_expert.model.ckpt'
+minority_expert_path: 'model/open_set_minority_expert.model-v2.ckpt'
 
 # --- Model Architecture ---
 num_total_classes: 10 # We are training on a 10-class problem
