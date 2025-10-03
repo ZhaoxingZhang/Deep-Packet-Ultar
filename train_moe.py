@@ -33,16 +33,7 @@ class MoEDataModule(LightningDataModule):
         # Read multiple parquet files from directory
         print(f"Train path: {train_path}")
         print(f"Is directory: {os.path.isdir(train_path)}")
-        if os.path.isdir(train_path):
-            # Read all parquet files in the directory
-            parquet_files = [os.path.join(train_path, f) for f in os.listdir(train_path) if f.endswith('.parquet')]
-            print(f"Found parquet files: {parquet_files}")
-            tables = [pq.read_table(f) for f in parquet_files]
-            table = pq.concat_tables(tables)
-        else:
-            # Read single parquet file
-            print(f"Reading single parquet file: {train_path}")
-            table = pq.read_table(train_path)
+        table = pq.read_table(train_path)
         df = table.to_pandas()
         
         features = torch.from_numpy(np.array(df['feature'].tolist(), dtype=np.float32))
