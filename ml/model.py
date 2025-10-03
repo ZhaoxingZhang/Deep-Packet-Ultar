@@ -729,41 +729,51 @@ class MixtureOfExperts(LightningModule):
         self.majority_map = {i: global_idx for i, global_idx in enumerate(self.majority_classes)}
         self.minority_map = {i: global_idx for i, global_idx in enumerate(self.minority_classes)}
 
-    def forward(self, x):
-        # --- Soft Routing Implementation ---
-
+    def forward(self, x, return_gate_outputs=False):
         # 1. Get gate probabilities
         gate_logits = self.gating_network(x)
         gate_probs = F.softmax(gate_logits, dim=1) # Shape: [batch_size, 2]
 
-        # 2. Get expert predictions
+        # 2. Get raw expert outputs
         if len(x.shape) == 2:
             x_exp = x.unsqueeze(1)
         else:
             x_exp = x
         
-        self.generalist_expert.eval()
-        self.minority_expert.eval()
-        with torch.no_grad():
-            generalist_logits_15_classes = self.generalist_expert(x_exp)
-            minority_logits_11_classes = self.minority_expert(x_exp)
+        generalist_logits_local = self.generalist_expert(x_exp) # Shape: [batch_size, num_majority_classes]
+        minority_logits_local = self.minority_expert(x_exp)   # Shape: [batch_size, num_minority_classes]
 
-        # 3. Project minority expert output to 15-class space
-        minority_logits_15_classes = torch.zeros_like(generalist_logits_15_classes) # Use zeros for proper weighting
+        # 3. Create a final logit tensor for all classes
+        batch_size = x.shape[0]
+        # Use a large negative number for logits of classes an expert doesn't know
+        # to ensure they have near-zero probability after softmax.
+        base_logits = torch.full((batch_size, self.num_total_classes), -1e9, device=x.device)
+
+        # 4. Project both experts' local outputs to the full class space
+        projected_generalist_logits = base_logits.clone()
+        for local_idx, global_idx in self.majority_map.items():
+            projected_generalist_logits[:, global_idx] = generalist_logits_local[:, local_idx]
+
+        projected_minority_logits = base_logits.clone()
         for local_idx, global_idx in self.minority_map.items():
-            minority_logits_15_classes[:, global_idx] = minority_logits_11_classes[:, local_idx]
+            projected_minority_logits[:, global_idx] = minority_logits_local[:, local_idx]
 
-        # 4. Weight the expert logits by the gate probabilities
-        # Unsqueeze gate_probs to allow broadcasting
+        # 5. Weight the projected logits by the gate probabilities (Soft Routing)
+        # Unsqueeze gate_probs to allow broadcasting: [batch_size, 1]
         # gate_probs[:, 0] is for generalist, gate_probs[:, 1] is for minority
-        weighted_generalist = generalist_logits_15_classes * gate_probs[:, 0].unsqueeze(-1)
-        weighted_minority = minority_logits_15_classes * gate_probs[:, 1].unsqueeze(-1)
+        weighted_generalist = projected_generalist_logits * gate_probs[:, 0].unsqueeze(-1)
+        weighted_minority = projected_minority_logits * gate_probs[:, 1].unsqueeze(-1)
 
-        # 5. Combine the weighted logits
-        # Since we initialized the projected minority logits with a large negative number,
-        # a simple sum combines the relevant parts from each expert.
+        # 6. Combine the weighted logits. Since the projections are disjoint (filled with -1e9),
+        # simple addition correctly combines the expert opinions.
         final_logits = weighted_generalist + weighted_minority
 
+        if return_gate_outputs:
+            return {
+                'final_output': final_logits,
+                'gate_outputs': gate_probs
+            }
+        
         return final_logits
 
     def training_step(self, batch, batch_idx):
@@ -787,17 +797,21 @@ class MixtureOfExperts(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y_global = batch
         
-        # Get final stitched logits from the forward method
-        final_logits = self(x)
+        # Get all outputs from the forward method in one go
+        result_dict = self(x, return_gate_outputs=True)
+        final_logits = result_dict['final_output']
+        gate_probs = result_dict['gate_outputs']
+        
         moe_preds = torch.argmax(final_logits, dim=1)
 
         # --- Gate validation ---
-        # We need gate_logits, let's get it from the gating_network directly
-        gate_logits = self.gating_network(x)
-        gate_preds = torch.argmax(gate_logits, dim=1)
+        gate_preds = torch.argmax(gate_probs, dim=1)
         minority_classes_tensor = torch.tensor(self.minority_classes, device=y_global.device)
         y_meta = torch.isin(y_global, minority_classes_tensor).long()
-        val_gate_loss = F.cross_entropy(gate_logits, y_meta)
+        
+        # Re-calculate gate_logits for loss calculation, as forward returns probabilities
+        gate_logits_val = self.gating_network(x)
+        val_gate_loss = F.cross_entropy(gate_logits_val, y_meta)
         val_gate_acc = torch.sum(gate_preds == y_meta).item() / (len(y_meta) * 1.0)
         
         self.log('val_loss', val_gate_loss, prog_bar=True) # val_loss is monitored by callbacks
