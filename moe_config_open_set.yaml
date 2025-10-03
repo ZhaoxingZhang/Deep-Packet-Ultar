@@ -1,7 +1,7 @@
 # Configuration for the Open-Set MoE Experiment (Experiment A)
 
 # --- Data Paths ---
-data_path: 'train_test_data/exp_open_set/'
+data_path: '/home/featurize/data/train_test_data/exp_open_set/application_classification'
 
 # --- Model Paths ---
 # Experts trained specifically on the 10 known classes
