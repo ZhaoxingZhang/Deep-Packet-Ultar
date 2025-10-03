@@ -168,7 +168,7 @@ def main(baseline_model_path, moe_model_path, moe_config_path, data_path, output
         baseline_preds_data['labels'], 
         baseline_preds_data['softmax_probs'],
         baseline_predictions,
-        known_classes_remapped 
+        known_classes_original
     )
 
     print("Calculating curve for Strategy 2: MoE-Softmax")
@@ -176,7 +176,7 @@ def main(baseline_model_path, moe_model_path, moe_config_path, data_path, output
         moe_preds_data['labels'], 
         moe_preds_data['softmax_probs'],
         moe_predictions,
-        known_classes_remapped
+        known_classes_original
     )
 
     print("Calculating curve for Strategy 3: MoE-Gate")
@@ -187,7 +187,7 @@ def main(baseline_model_path, moe_model_path, moe_config_path, data_path, output
         moe_preds_data['labels'], 
         moe_preds_data['gate_outputs'],
         moe_predictions, # We still use the final predictions for accuracy calculation
-        known_classes_remapped
+        known_classes_original
     )
 
     # --- 5. Save Results ---
