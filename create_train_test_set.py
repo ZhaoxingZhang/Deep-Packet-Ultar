@@ -291,6 +291,28 @@ def create_train_test_for_task(
         save_train(train_df, data_dir_path)
         save_test(test_df, data_dir_path)
         print("------------------------------------------")
+    elif experiment_type == "exp_incremental_new":
+        new_classes = [10, 0, 4, 6, 12]
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+        filtered_df = task_df.filter(col('label').isin(new_classes))
+        
+        label_mapping = {original_label: i for i, original_label in enumerate(sorted(new_classes))}
+        from pyspark.sql.functions import create_map
+        from itertools import chain
+        mapping_expr = create_map([lit(x) for x in chain(*label_mapping.items())])
+        
+        mapped_df = filtered_df.withColumn("label", mapping_expr[col("label")])
+        
+        train_df, test_df = split_train_test(mapped_df, test_size, under_sampling_train=False)
+
+        print("--- Creating dataset for Incremental NEW classes ---")
+        print(f"Original classes: {new_classes}")
+        print(f"Remapped to: {list(label_mapping.values())}")
+        save_train(train_df, data_dir_path)
+        save_test(test_df, data_dir_path)
+        print("------------------------------------------")
 
 
 def print_df_label_distribution(spark, path):
@@ -328,7 +350,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_incremental_new"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )
