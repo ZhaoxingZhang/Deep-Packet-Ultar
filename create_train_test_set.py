@@ -4,6 +4,41 @@ import sys
 from pathlib import Path
 import shutil
 
+# -- experiment_type Parameter Guide --
+# This script uses the --experiment_type flag to define how the dataset should be processed.
+# Each type corresponds to a different data splitting and sampling strategy for various experimental needs.
+#
+# - `imbalanced` (Recommended for baseline):
+#   - What it does: Performs a standard, stratified train/test split based on `--test_size`.
+#   - Key feature: The original imbalanced data distribution is preserved in both the training and testing sets.
+#   - Use case: Training a model on the real-world data distribution.
+#
+# - `exp2`:
+#   - What it does: Splits into train/test sets, then performs under-sampling on the **training set**.
+#   - Key feature: The final training set is balanced (all classes have the same number of samples as the smallest class).
+#     The test set remains imbalanced.
+#   - Use case: Training a model on a balanced dataset to avoid bias towards majority classes, while testing on a realistic distribution.
+#
+# - `exp3`:
+#   - What it does: Performs under-sampling on the **entire dataset** before splitting.
+#   - Key feature: Both the training and testing sets are balanced.
+#   - Use case: When you need balanced data for both training and testing, but be aware that this discards a significant amount of data from majority classes.
+#
+# - `exp1` / `exp_open_set`:
+#   - What it does: Simulates an open-set recognition scenario. It splits classes into 'known' and 'unknown' groups.
+#   - Key feature: The training set contains only 'known' classes. The test set contains a mix of 'known' and 'unknown' classes.
+#     `exp1` uses ratios (`--known_ratio`) to define the groups, while `exp_open_set` uses a hard-coded list of classes.
+#   - Use case: Evaluating a model's ability to handle classes it has never seen during training.
+#
+# - `exp8_majority` / `exp8_minority`:
+#   - What it does: Filters the dataset to include only a specific, hard-coded list of majority or minority classes.
+#   - Key feature: Creates a smaller, focused dataset for training expert models in a Mixture of Experts (MoE) setup.
+#   - Use case: Training specialized models that only need to learn a subset of classes.
+#
+# - `exp_open_set_majority` / `exp_open_set_minority` / `exp_incremental_new`:
+#   - What it does: Similar to `exp8`, these filter the dataset for specific, hard-coded lists of classes for various open-set and incremental learning experiments.
+#   - Use case: Highly specific experimental setups.
+
 import click
 import psutil
 from pyspark.sql import SparkSession, Window
@@ -321,6 +356,15 @@ def create_train_test_for_task(
         save_train(train_df, data_dir_path)
         save_test(test_df, data_dir_path)
         print("------------------------------------------")
+    elif experiment_type == "imbalanced":
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+        train_df, test_df = split_train_test(task_df, test_size, under_sampling_train=False)
+        print("--- Creating dataset with imbalanced train/test split ---")
+        save_train(train_df, data_dir_path)
+        save_test(test_df, data_dir_path)
+        print("--------------------------------------------------------")
 
 
 def print_df_label_distribution(spark, path):
@@ -358,7 +402,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_incremental_new"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_incremental_new", "imbalanced"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )
