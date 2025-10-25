@@ -1,0 +1,57 @@
+python train_resnet.py -d train_test_data/exp5_fractional_1_600/application_classification -m model/application_classification.resnet.exp5.baseline.model -t app
+python evaluation.py \
+              -m model/application_classification.resnet.exp5.baseline.model \
+              -d train_test_data/exp4_medium_balanced/application_classification/test.parquet \
+              --model_type resnet
+python train_resnet.py -d /home/featurize/data/exp6_smote/application_classification -m model/application_classification.resnet.exp6.smote.model -t app
+python create_train_test_set.py --source /home/featurize/data/all --target train_test_data/exp5_fractional_1_600 --fraction 0.0017 --batch_size 50
+python evaluation.py \
+              -m model/application_classification.resnet.exp6.smote.model \
+              -d /home/featurize/data/exp6_smote/application_classification/test.parquet \
+              --model_type resnet
+scp -P 29225 featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/evaluation_results/application_classification.resnet.exp6.smote ./evaluation_results/
+python train_resnet.py -d /home/featurize/data/exp5_fractional_1_600/application_classification -m model/application_classification.resnet.exp5.baseline.model -t app
+python evaluation.py \
+              -m model/application_classification.resnet.exp5.baseline.model \
+              -d /home/featurize/data/exp5_fractional_1_600/application_classification/test.parquet \
+              --model_type resnet
+python evaluation.py \
+              -m model/application_classification.resnet.exp5.attention.model \
+              -d /home/featurize/data/exp5_fractional_1_600/application_classification/test.parquet \
+              --model_type resnet
+ python train_resnet.py \
+      -d /home/featurize/data/exp5_fractional_1_600/application_classification \
+      -m model/application_classification.resnet.exp7.focal_loss.model \
+      -t app \
+      --loss_type focal_loss
+python evaluation.py \
+       -m model/application_classification.resnet.exp7.focal_loss.model \
+       -d /home/featurize/data//exp5_fractional_1_600/application_classification/test.parquet \
+       --model_type resnet
+python train_resnet.py \
+      -d /home/featurize/data/exp5_fractional_1_600/application_classification\
+      -m model/application_classification.resnet.exp8.class_aware_sampling.model \
+      -t app \
+      --sampling_strategy class_aware
+python evaluation.py \
+              -m model/application_classification.resnet.exp8.class_aware_sampling.model \
+              -d /home/featurize/data/exp5_fractional_1_600/application_classification/test.parquet \
+              --model_type resnet
+python create_train_test_set.py \
+      -s /home/featurize/data/all \
+      -t /home/featurize/data/exp8_majority \
+      --experiment_type exp8_majority \
+      --fraction 0.0016666667
+
+python preprocessing.py -s /home/featurize/data/VPN-PCAPs -t processed_data/vpn --mask-ports
+python preprocessing.py -s /Users/weisman/Documents/repo_root/dataset/ISCX\ VPN-nonVPN\ 2016/PCAPs/VPN-PCAPS -t processed_data/vpn --mask-ports
+python create_train_test_set.py -s processed_data/vpn -t train_test_data/vpn  --fraction 0.01 --batch_size 50
+nohup python create_train_test_set.py \
+  -s /home/featurize/data/processed_data/vpn \
+  -t train_test_data/from_featurize_vpn \
+  --experiment_type exp2 \
+  --fraction 0.01 \
+  --batch_size 50 \
+  > log/from_featurize_vpn.txt &
+watch -n 1 tail -n 50 log/from_featurize_vpn.txt
+python train_resnet.py -d /home/featurize/data/train_test_data/from_featurize_vpn/application_classification/train.parquet -m model/resnet_vpn_featurize.model -t app

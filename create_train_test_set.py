@@ -38,7 +38,13 @@ def split_train_test(df, test_size, under_sampling_train=True):
     df_with_row_number = df.withColumn("row_number", row_number().over(window))
 
     # Get the total count for each label
-    label_counts = df.groupBy("label").count()
+    label_counts = df.groupby("label").count()
+
+    # Log labels that have only one sample, as they will only appear in the test set
+    single_sample_labels_df = label_counts.filter(col("count") == 1)
+    if single_sample_labels_df.count() > 0:
+        single_sample_labels = [row.label for row in single_sample_labels_df.select("label").collect()]
+        print(f"INFO: The following labels have only one sample and will be moved to the test set entirely: {sorted(single_sample_labels)}")
 
     # Join the row number and count information
     df_with_counts = df_with_row_number.join(label_counts, "label")
@@ -55,10 +61,12 @@ def split_train_test(df, test_size, under_sampling_train=True):
         # get label list with count of each label
         label_count_df = train_df.groupby("label").count().toPandas()
 
-        # get min label count in train set for under sampling
-        min_label_count = int(label_count_df["count"].min())
+        # if train_df is empty, label_count_df will be empty, skip under sampling
+        if not label_count_df.empty:
+            # get min label count in train set for under sampling
+            min_label_count = int(label_count_df["count"].min())
 
-        train_df = top_n_per_group(train_df, "label", min_label_count)
+            train_df = top_n_per_group(train_df, "label", min_label_count)
 
     return train_df, test_df
 
@@ -436,7 +444,7 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
         print("Loading all files from source for non-fractional experiment...")
         # Use a recursive glob pattern to find all part files.
         df = spark.read.schema(schema).json(
-            f"{source_data_dir_path.absolute().as_uri()}/**/*.json.gz"
+            f"{source_data_dir_path.absolute().as_uri()}/*.json.gz"
         )
 
     # prepare data for application classification and traffic classification
