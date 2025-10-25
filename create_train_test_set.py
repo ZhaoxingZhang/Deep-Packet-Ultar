@@ -434,8 +434,9 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
     else:
         # Original logic for other experiments that load the entire dataset
         print("Loading all files from source for non-fractional experiment...")
+        # Use a recursive glob pattern to find all part files.
         df = spark.read.schema(schema).json(
-            f"{source_data_dir_path.absolute().as_uri()}/*.json.gz"
+            f"{source_data_dir_path.absolute().as_uri()}/**/*.json.gz"
         )
 
     # prepare data for application classification and traffic classification

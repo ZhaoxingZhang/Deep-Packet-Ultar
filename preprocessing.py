@@ -11,8 +11,9 @@ from joblib import Parallel, delayed
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.compat import raw
-from scapy.layers.inet import IP, UDP
+from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether
+import os
 from scapy.packet import Padding
 from scipy import sparse
 
@@ -33,6 +34,14 @@ def mask_ip(packet):
 
     return packet
 
+def mask_ports_to_zero(packet):
+    if TCP in packet:
+        packet[TCP].sport = 0
+        packet[TCP].dport = 0
+    elif UDP in packet:
+        packet[UDP].sport = 0
+        packet[UDP].dport = 0
+    return packet
 
 def pad_udp(packet):
     if UDP in packet:
@@ -62,12 +71,16 @@ def packet_to_sparse_array(packet, max_length=1500):
     return arr
 
 
-def transform_packet(packet):
+def transform_packet(packet, mask_ports_enabled=False):
     if should_omit_packet(packet):
         return None
 
     packet = remove_ether_header(packet)
     packet = pad_udp(packet)
+
+    if mask_ports_enabled:
+        packet = mask_ports_to_zero(packet)
+
     packet = mask_ip(packet)
 
     arr = packet_to_sparse_array(packet)
@@ -75,7 +88,7 @@ def transform_packet(packet):
     return arr
 
 
-def transform_pcap(path, output_path: Optional[Path] = None, output_batch_size=10000):
+def transform_pcap(path, output_path: Optional[Path] = None, output_batch_size=10000, mask_ports_enabled=False):
     if output_path is None:
         return
 
@@ -104,7 +117,7 @@ def transform_pcap(path, output_path: Optional[Path] = None, output_batch_size=1
         print(f"发现已存在的部分文件，从批次 {batch_index} 继续处理")
     
     for i, packet in enumerate(read_pcap(path)):
-        arr = transform_packet(packet)
+        arr = transform_packet(packet, mask_ports_enabled=mask_ports_enabled)
         if arr is not None:
             # get labels for app identification
             prefix = path.name.split(".")[0].lower()
@@ -159,7 +172,8 @@ def transform_pcap(path, output_path: Optional[Path] = None, output_batch_size=1
 )
 @click.option("-n", "--njob", default=4, help="num of executors", type=int)
 @click.option("--resume", is_flag=True, help="resume from last interrupted point", default=True)
-def main(source, target, njob, resume):
+@click.option("--mask-ports", is_flag=True, help="mask ports to remove port information", default=False)
+def main(source, target, njob, resume, mask_ports):
     data_dir_path = Path(source)
     target_dir_path = Path(target)
     target_dir_path.mkdir(parents=True, exist_ok=True)
@@ -190,12 +204,14 @@ def main(source, target, njob, resume):
     if njob == 1:
         for pcap_path in files_to_process:
             transform_pcap(
-                pcap_path, target_dir_path / (pcap_path.name + ".transformed")
+                pcap_path, target_dir_path / (pcap_path.name + ".transformed"),
+                mask_ports_enabled=mask_ports
             )
     else:
         Parallel(n_jobs=njob, verbose=10)(
             delayed(transform_pcap)(
-                pcap_path, target_dir_path / (pcap_path.name + ".transformed")
+                pcap_path, target_dir_path / (pcap_path.name + ".transformed"),
+                mask_ports_enabled=mask_ports
             )
             for pcap_path in files_to_process
         )

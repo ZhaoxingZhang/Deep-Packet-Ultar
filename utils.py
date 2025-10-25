@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from scapy.layers.dns import DNS
-from scapy.layers.inet import TCP
+from scapy.layers.inet import TCP, UDP
+from scapy.layers.l2 import ARP
+from scapy.layers.ntp import NTP
 from scapy.packet import Padding
 from scapy.utils import PcapReader
 
@@ -335,8 +337,12 @@ def should_omit_packet(packet):
         if not layers or (Padding in layers and len(layers) == 1):
             return True
 
-    # DNS segment
-    if DNS in packet:
+    # DNS, ARP, NTP are infrastructure protocols, not relevant for app identification
+    if DNS in packet or ARP in packet or NTP in packet:
+        return True
+
+    # NBNS and LLMNR are local network protocols, using fixed ports
+    if UDP in packet and (packet.sport in [137, 5355] or packet.dport in [137, 5355]):
         return True
 
     return False
