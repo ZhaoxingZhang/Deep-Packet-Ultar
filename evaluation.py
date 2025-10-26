@@ -55,7 +55,7 @@ def evaluate(model_path, data_path, output_dir, model_type, moe_config_path):
     if model_type == 'cnn':
         raise NotImplementedError("CNN loading not implemented in this version.")
     elif model_type == 'resnet':
-        raise NotImplementedError("ResNet loading not implemented in this version.")
+        model = ResNet.load_from_checkpoint(model_path)
     elif model_type == 'moe':
         yaml = YAML(typ='safe')
         with open(moe_config_path, 'r') as f:
