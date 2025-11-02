@@ -139,8 +139,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
     
     results_file = os.path.join(output_dir, "evaluation_summary.txt")
     with open(results_file, 'w') as f:
-        f.write(f"--- Evaluation Mode: {eval_mode} ---
-")
+        f.write(f"--- Evaluation Mode: {eval_mode} ---")
         if eval_mode == 'ensemble':
             f.write(f"Baseline Model: {baseline_model_path}\n")
             f.write(f"Minority Model: {minority_model_path}\n")
