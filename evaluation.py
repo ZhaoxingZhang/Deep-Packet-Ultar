@@ -5,6 +5,7 @@ import click
 import torch
 import pyarrow.parquet as pq
 import numpy as np
+import pandas as pd
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import seaborn as sns
@@ -15,7 +16,7 @@ from ruamel.yaml import YAML
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ml.model import MixtureOfExperts, ResNet
+from ml.model import ResNet
 
 def load_data(data_path):
     table = pq.read_table(data_path)
@@ -39,57 +40,94 @@ def get_output_dir_from_model_path(model_path):
     return output_dir
 
 @click.command()
-@click.option("-m", "--model_path", required=True, help="Path to the trained model checkpoint.")
 @click.option("-d", "--data_path", required=True, help="Path to the test data parquet file.")
-@click.option("-o", "--output_dir", help="Directory to save evaluation results. If not provided, will be derived from model path.")
-@click.option("--model_type", default="cnn", type=click.Choice(['cnn', 'resnet', 'moe']), help="Type of model to load.")
-@click.option("--moe_config_path", default="moe_config.yaml", help="Path to the MoE YAML config file (required for model_type='moe').")
-def evaluate(model_path, data_path, output_dir, model_type, moe_config_path):
-    """Evaluates a trained model on the given test set."""
-    if output_dir is None:
-        output_dir = get_output_dir_from_model_path(model_path)
+@click.option("-o", "--output_dir", required=True, help="Directory to save evaluation results.")
+@click.option("--eval-mode", type=click.Choice(['standard', 'ensemble']), default='standard', help="Evaluation mode.")
+# Options for 'standard' mode
+@click.option("--model_path", help="Path to the single model checkpoint for standard evaluation.")
+@click.option("--model_type", type=click.Choice(['resnet']), help="Type of model for standard evaluation.")
+# Options for 'ensemble' mode
+@click.option("--baseline_model_path", help="Path to the baseline model for ensemble evaluation.")
+@click.option("--minority_model_path", help="Path to the minority expert model for ensemble evaluation.")
+@click.option("--minority_classes", type=int, multiple=True, help="The original labels of the minority classes (e.g., 5 7).")
+@click.option("--baseline_weight", type=float, default=0.5, help="Weight for the baseline model.")
+@click.option("--minority_weight", type=float, default=0.5, help="Weight for the minority expert model.")
+def evaluate(data_path, output_dir, eval_mode, model_path, model_type, 
+             baseline_model_path, minority_model_path, minority_classes, 
+             baseline_weight, minority_weight):
+    """Evaluates a trained model or an ensemble of models on the given test set."""
     
     os.makedirs(output_dir, exist_ok=True)
-
-    print(f"Loading {model_type} model from {model_path}...")
-    if model_type == 'cnn':
-        raise NotImplementedError("CNN loading not implemented in this version.")
-    elif model_type == 'resnet':
-        model = ResNet.load_from_checkpoint(model_path)
-    elif model_type == 'moe':
-        yaml = YAML(typ='safe')
-        with open(moe_config_path, 'r') as f:
-            config = yaml.load(f)
-        
-        print(f"Loading Generalist expert from: {config['generalist_expert_path']}")
-        generalist_expert = ResNet.load_from_checkpoint(config['generalist_expert_path'])
-        print(f"Loading Minority expert from: {config['minority_expert_path']}")
-        minority_expert = ResNet.load_from_checkpoint(config['minority_expert_path'])
-
-        model = MixtureOfExperts.load_from_checkpoint(
-            model_path,
-            generalist_expert=generalist_expert,
-            minority_expert=minority_expert
-        )
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
     
-    model.eval()
+    all_preds = []
+    all_labels = []
 
     print(f"Loading data from {data_path}...")
     test_dataloader = load_data(data_path)
 
-    print("Running predictions...")
-    all_preds = []
-    all_labels = []
-    with torch.no_grad():
-        for features, labels in test_dataloader:
-            outputs = model(features)
-            _, predicted = torch.max(outputs, 1)
-            all_preds.extend(predicted.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
+    if eval_mode == 'standard':
+        if not model_path or not model_type:
+            raise ValueError("For 'standard' mode, --model_path and --model_type are required.")
+        
+        print(f"--- Running in STANDARD mode ---")
+        print(f"Loading {model_type} model from {model_path}...")
+        if model_type == 'resnet':
+            model = ResNet.load_from_checkpoint(model_path)
+        else:
+            raise ValueError(f"Unknown model type for standard evaluation: {model_type}")
+        
+        model.eval()
+        with torch.no_grad():
+            for features, labels in test_dataloader:
+                outputs = model(features)
+                _, predicted = torch.max(outputs, 1)
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
 
-    print("Calculating metrics...")
+    elif eval_mode == 'ensemble':
+        if not baseline_model_path or not minority_model_path or not minority_classes:
+            raise ValueError("For 'ensemble' mode, --baseline_model_path, --minority_model_path, and --minority_classes are required.")
+        
+        print(f"--- Running in ENSEMBLE mode ---")
+        print(f"Loading baseline model from {baseline_model_path}...")
+        baseline_model = ResNet.load_from_checkpoint(baseline_model_path)
+        baseline_model.eval()
+
+        print(f"Loading minority expert model from {minority_model_path}...")
+        minority_model = ResNet.load_from_checkpoint(minority_model_path)
+        minority_model.eval()
+
+        # Create the mapping from the expert's output index (0, 1, ...) to the original class label
+        expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
+        print(f"Minority expert mapping: {expert_idx_to_original_label}")
+
+        with torch.no_grad():
+            for features, labels in test_dataloader:
+                # 1. Get probabilities from baseline model
+                base_outputs = baseline_model(features)
+                base_probs = torch.nn.functional.softmax(base_outputs, dim=1)
+
+                # 2. Get probabilities from minority expert
+                expert_outputs = minority_model(features)
+                expert_probs_small = torch.nn.functional.softmax(expert_outputs, dim=1)
+
+                # 3. Align expert probabilities to the full class space
+                num_total_classes = base_probs.shape[1]
+                expert_probs_full = torch.zeros_like(base_probs)
+                for i in range(expert_probs_small.shape[1]):
+                    original_label_idx = expert_idx_to_original_label[i]
+                    expert_probs_full[:, original_label_idx] = expert_probs_small[:, i]
+
+                # 4. Combine probabilities with weights
+                final_probs = (baseline_weight * base_probs) + (minority_weight * expert_probs_full)
+                
+                # 5. Get final prediction
+                _, predicted = torch.max(final_probs, 1)
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+
+    # --- Common evaluation logic ---
+    print("\nCalculating metrics...")
     accuracy = accuracy_score(all_labels, all_preds)
     report = classification_report(all_labels, all_preds, zero_division=0)
     cm = confusion_matrix(all_labels, all_preds)
@@ -101,7 +139,12 @@ def evaluate(model_path, data_path, output_dir, model_type, moe_config_path):
     
     results_file = os.path.join(output_dir, "evaluation_summary.txt")
     with open(results_file, 'w') as f:
-        f.write("--- Evaluation Results ---")
+        f.write(f"--- Evaluation Mode: {eval_mode} ---
+")
+        if eval_mode == 'ensemble':
+            f.write(f"Baseline Model: {baseline_model_path}\n")
+            f.write(f"Minority Model: {minority_model_path}\n")
+            f.write(f"Weights (Base/Minority): {baseline_weight}/{minority_weight}\n\n")
         f.write(f"Accuracy: {accuracy:.4f}\n")
         f.write("\nClassification Report:\n")
         f.write(report)
@@ -109,7 +152,7 @@ def evaluate(model_path, data_path, output_dir, model_type, moe_config_path):
 
     plt.figure(figsize=(15, 12))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-    plt.title('Confusion Matrix')
+    plt.title(f'Confusion Matrix ({eval_mode.capitalize()} Mode)')
     plt.ylabel('Actual Labels')
     plt.xlabel('Predicted Labels')
     cm_path = os.path.join(output_dir, "confusion_matrix.png")

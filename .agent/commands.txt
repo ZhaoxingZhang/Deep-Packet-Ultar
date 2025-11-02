@@ -55,3 +55,35 @@ nohup python create_train_test_set.py \
   > log/from_featurize_vpn.txt &
 watch -n 1 tail -n 50 log/from_featurize_vpn.txt
 python train_resnet.py -d /home/featurize/data/train_test_data/from_featurize_vpn/application_classification/train.parquet -m model/resnet_vpn_featurize.model -t app
+
+# 创建少数类训练集
+python create_train_test_set.py \
+--source processed_data/vpn \
+--target train_test_data/traffic_minority_expert \
+--experiment_type exp8_minority \
+--minority-classes 5 \
+--minority-classes 7
+# 训练少数类专家
+python train_resnet.py \
+--data_path /home/featurize/data/train_test_data/traffic_minority_expert/traffic_classification \
+--model_path model/minority_expert_resnet.pth \
+--task traffic
+# 验证5、7类是否混淆
+python analyze_baseline_confidence.py \
+--model_path model/resnet_vpn_featurize.model.ckpt \
+--data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/test.parquet \
+--minority-classes 5 \
+--minority-classes 7
+# 下载衡量结果
+scp -P 64802 -r featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/minority_analysis.csv ./evaluation_results/
+# 测试
+python evaluation.py \
+--data_path train_test_data/traffic_classification/test.parquet \
+--output_dir evaluation_results/ensemble_traffic_minority \
+--eval-mode ensemble \
+--baseline_model_path model/application_classification.resnet.exp4.baseline.model \
+--minority_model_path model/minority_expert_resnet.pth \
+--minority-classes 5 \
+--minority-classes 7 \
+--baseline_weight 0.5 \
+--minority_weight 0.5
