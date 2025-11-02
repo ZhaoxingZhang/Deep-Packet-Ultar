@@ -129,6 +129,7 @@ def create_train_test_for_task(
     known_ratio,
     unknown_train_ratio,
     experiment_type,
+    minority_classes,
 ):
     if experiment_type == "exp1":
         task_df = df.filter(col(label_col).isNotNull()).selectExpr(
@@ -242,11 +243,12 @@ def create_train_test_for_task(
         save_test(test_df, data_dir_path)
         print("------------------------------------------")
     elif experiment_type == "exp8_minority":
-        minority_classes = [0, 1, 4, 6, 7, 8, 9, 11, 12, 13, 14]
+        if not minority_classes:
+            raise ValueError("The --minority-classes argument is required for experiment_type 'exp8_minority'")
         task_df = df.filter(col(label_col).isNotNull()).selectExpr(
             "feature", f"{label_col} as label"
         )
-        filtered_df = task_df.filter(col('label').isin(minority_classes))
+        filtered_df = task_df.filter(col('label').isin(*minority_classes))
         
         label_mapping = {original_label: i for i, original_label in enumerate(sorted(minority_classes))}
         from pyspark.sql.functions import create_map
@@ -418,7 +420,13 @@ def print_df_label_distribution(spark, path):
     help="Number of files to process in each batch when using fractional sampling.",
     type=int,
 )
-def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment_type, fraction, batch_size):
+@click.option(
+    "--minority-classes",
+    type=int,
+    multiple=True,
+    help="List of class labels to be treated as minority classes for exp8_minority."
+)
+def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment_type, fraction, batch_size, minority_classes):
     source_data_dir_path = Path(source)
     target_data_dir_path = Path(target)
 
@@ -501,6 +509,7 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
         known_ratio=known_ratio,
         unknown_train_ratio=unknown_train_ratio,
         experiment_type=experiment_type,
+        minority_classes=minority_classes,
     )
 
     print("processing traffic classification dataset")
@@ -512,6 +521,7 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
         known_ratio=known_ratio,
         unknown_train_ratio=unknown_train_ratio,
         experiment_type=experiment_type,
+        minority_classes=minority_classes,
     )
 
     # stats
