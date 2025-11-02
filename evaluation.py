@@ -114,9 +114,14 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                 # 3. Align expert probabilities to the full class space
                 num_total_classes = base_probs.shape[1]
                 expert_probs_full = torch.zeros_like(base_probs)
-                for i in range(expert_probs_small.shape[1]):
-                    original_label_idx = expert_idx_to_original_label[i]
-                    expert_probs_full[:, original_label_idx] = expert_probs_small[:, i]
+                for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
+                    # Ensure expert_local_idx is within the bounds of expert_probs_small
+                    if expert_local_idx < expert_probs_small.shape[1]:
+                        expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
+                    else:
+                        # This case should ideally not happen if the model was trained correctly,
+                        # but we handle it for robustness as per user's request.
+                        print(f"Warning: Minority expert output dimension ({expert_probs_small.shape[1]}) is smaller than expected for local index {expert_local_idx}. Skipping.")
 
                 # 4. Combine probabilities with weights
                 final_probs = (baseline_weight * base_probs) + (minority_weight * expert_probs_full)
