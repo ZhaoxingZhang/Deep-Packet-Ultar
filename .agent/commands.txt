@@ -54,7 +54,7 @@ nohup python create_train_test_set.py \
   --batch_size 50 \
   > log/from_featurize_vpn.txt &
 watch -n 1 tail -n 50 log/from_featurize_vpn.txt
-python train_resnet.py -d /home/featurize/data/train_test_data/from_featurize_vpn/application_classification/train.parquet -m model/resnet_vpn_featurize.model -t app
+python train_resnet.py -d /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet -m model/resnet_vpn_featurize.model -t app
 
 # 创建少数类训练集
 python create_train_test_set.py \
@@ -78,12 +78,24 @@ python analyze_baseline_confidence.py \
 scp -P 64802 -r featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/minority_analysis.csv ./evaluation_results/
 # 测试
 python evaluation.py \
---data_path train_test_data/traffic_classification/test.parquet \
+--data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/test.parquet \
 --output_dir evaluation_results/ensemble_traffic_minority \
 --eval-mode ensemble \
---baseline_model_path model/application_classification.resnet.exp4.baseline.model \
---minority_model_path model/minority_expert_resnet.pth \
---minority-classes 5 \
---minority-classes 7 \
---baseline_weight 0.5 \
---minority_weight 0.5
+--baseline_model_path model/resnet_vpn_featurize.model.ckpt \
+--minority_model_path model/minority_expert_resnet.pth.ckpt \
+--minority_classes 5 \
+--minority_classes 7 \
+--baseline_weight 0.75 \
+--minority_weight 0.25
+
+python train_gating_network.py \
+--train_data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet \
+--baseline_model_path model/resnet_vpn_featurize.model.ckpt \
+--minority_model_path model/minority_expert_resnet.pth.ckpt \
+--minority_classes 5 \
+--minority_classes 7 \
+--output_path model/gating_network.pth \
+--epochs 10 \
+--lr 0.001
+
+scp -P 56116 featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/model/* model/

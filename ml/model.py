@@ -221,45 +221,81 @@ class CustomMaxPool1d(nn.Module):
         return net
 
 
-class GatingNetwork(nn.Module):
+class CustomMaxPool1d(nn.Module):
     """
-    A lightweight CNN to act as a router for the Mixture of Experts model.
-    It performs a binary classification to decide which expert to use.
+    extend nn.MaxPool1d to support SAME padding
     """
-    def __init__(self, signal_length=1500):
-        super().__init__()
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=8, stride=1),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2, stride=2)
-        )
-        self.conv2 = nn.Sequential(
-            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=8, stride=1),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2, stride=2)
-        )
-        
-        # Calculate the output size after conv layers
-        dummy_x = torch.rand(1, 1, signal_length, requires_grad=False)
-        dummy_x = self.conv1(dummy_x)
-        dummy_x = self.conv2(dummy_x)
-        flattened_size = dummy_x.view(1, -1).shape[1]
 
-        self.fc1 = nn.Linear(flattened_size, 100)
-        self.out = nn.Linear(100, 2) # Output for 2 experts (Generalist vs. Specialist)
+    def __init__(self, kernel_size):
+        super(CustomMaxPool1d, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = 1
+        self.max_pool = torch.nn.MaxPool1d(kernel_size=self.kernel_size)
 
     def forward(self, x):
-        # Add channel dimension if not present, which is expected by Conv1d
-        if len(x.shape) == 2:
-            x = x.unsqueeze(1)
+        net = x
 
-        batch_size = x.shape[0]
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = x.reshape(batch_size, -1)
-        x = F.relu(self.fc1(x))
-        x = self.out(x)
-        return x
+        # compute pad shape
+        in_dim = net.shape[-1]
+        out_dim = (in_dim + self.stride - 1) // self.stride
+        p = max(0, (out_dim - 1) * self.stride + self.kernel_size - in_dim)
+        pad_left = p // 2
+        pad_right = p - pad_left
+        net = F.pad(net, (pad_left, pad_right), "constant", 0)
+
+        net = self.max_pool(net)
+
+        return net
+
+
+class GatingNetwork(nn.Module):
+    """
+    A trainable MLP that learns to combine probability outputs from a baseline
+    and an expert model.
+    """
+    def __init__(self, num_classes, hidden_dim_scale=1):
+        """
+        Initializes the Gating Network.
+        Args:
+            num_classes (int): The total number of output classes.
+            hidden_dim_scale (int): Scale factor for the hidden layer dimension 
+                                    relative to num_classes.
+        """
+        super().__init__()
+        self.num_classes = num_classes
+        
+        # Input dimension is 2 * num_classes because we concatenate the
+        # probability vectors from two models.
+        input_dim = 2 * num_classes
+        hidden_dim = num_classes * hidden_dim_scale
+
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_classes),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, baseline_probs, expert_probs):
+        """
+        Forward pass for the Gating Network.
+        Args:
+            baseline_probs (torch.Tensor): Probability vector from the baseline model.
+                                           Shape: (batch_size, num_classes)
+            expert_probs (torch.Tensor): Probability vector from the expert model,
+                                         mapped to the full class space.
+                                         Shape: (batch_size, num_classes)
+        Returns:
+            torch.Tensor: The final combined probability distribution.
+                          Shape: (batch_size, num_classes)
+        """
+        # Concatenate the two probability vectors along the feature dimension
+        combined_probs = torch.cat((baseline_probs, expert_probs), dim=1)
+        
+        # Pass through the MLP
+        final_probs = self.network(combined_probs)
+        
+        return final_probs
 
 
 class BasicBlock(nn.Module):
@@ -710,127 +746,3 @@ class ResNet(LightningModule):
             on_epoch=True,
         )
         return entropy
-
-class MixtureOfExperts(LightningModule):
-    def __init__(self, generalist_expert, minority_expert, num_total_classes, majority_classes, minority_classes):
-        super().__init__()
-        self.save_hyperparameters(ignore=['generalist_expert', 'minority_expert'])
-
-        self.generalist_expert = generalist_expert
-        self.minority_expert = minority_expert
-        self.gating_network = GatingNetwork()
-
-        # Mappings for labels
-        self.num_total_classes = num_total_classes
-        self.majority_classes = sorted(majority_classes)
-        self.minority_classes = sorted(minority_classes)
-
-        # Create reverse mappings from expert-local output index to global class index
-        self.majority_map = {i: global_idx for i, global_idx in enumerate(self.majority_classes)}
-        self.minority_map = {i: global_idx for i, global_idx in enumerate(self.minority_classes)}
-
-    def forward(self, x, return_gate_outputs=False):
-        # 1. Get gate probabilities
-        gate_logits = self.gating_network(x)
-        gate_probs = F.softmax(gate_logits, dim=1) # Shape: [batch_size, 2]
-
-        # 2. Get raw expert outputs
-        if len(x.shape) == 2:
-            x_exp = x.unsqueeze(1)
-        else:
-            x_exp = x
-        
-        generalist_logits_local = self.generalist_expert(x_exp) # Shape: [batch_size, num_majority_classes]
-        minority_logits_local = self.minority_expert(x_exp)   # Shape: [batch_size, num_minority_classes]
-
-        # 3. Create a final logit tensor for all classes
-        batch_size = x.shape[0]
-        # Use a large negative number for logits of classes an expert doesn't know
-        # to ensure they have near-zero probability after softmax.
-        base_logits = torch.full((batch_size, self.num_total_classes), -1e9, device=x.device)
-
-        # 4. Project both experts' local outputs to the full class space
-        projected_generalist_logits = base_logits.clone()
-        for local_idx, global_idx in self.majority_map.items():
-            projected_generalist_logits[:, global_idx] = generalist_logits_local[:, local_idx]
-
-        projected_minority_logits = base_logits.clone()
-        for local_idx, global_idx in self.minority_map.items():
-            projected_minority_logits[:, global_idx] = minority_logits_local[:, local_idx]
-
-        # 5. Weight the projected logits by the gate probabilities (Soft Routing)
-        # Unsqueeze gate_probs to allow broadcasting: [batch_size, 1]
-        # gate_probs[:, 0] is for generalist, gate_probs[:, 1] is for minority
-        weighted_generalist = projected_generalist_logits * gate_probs[:, 0].unsqueeze(-1)
-        weighted_minority = projected_minority_logits * gate_probs[:, 1].unsqueeze(-1)
-
-        # 6. Combine the weighted logits. Since the projections are disjoint (filled with -1e9),
-        # simple addition correctly combines the expert opinions.
-        final_logits = weighted_generalist + weighted_minority
-
-        if return_gate_outputs:
-            return {
-                'final_output': final_logits,
-                'gate_outputs': gate_probs
-            }
-        
-        return final_logits
-
-    def training_step(self, batch, batch_idx):
-        x, y_global = batch
-        
-        # 1. Get gating network's prediction
-        gate_logits = self.gating_network(x)
-
-        # 2. Determine the "true" expert for each sample
-        # Create a tensor of minority classes for efficient lookup
-        minority_classes_tensor = torch.tensor(self.minority_classes, device=y_global.device)
-        # y_meta is 1 if the class is in minority_classes, 0 otherwise
-        y_meta = torch.isin(y_global, minority_classes_tensor).long()
-
-        # 3. Calculate loss for the gating network
-        gate_loss = F.cross_entropy(gate_logits, y_meta)
-        self.log('train_gate_loss', gate_loss, on_step=True, on_epoch=True, prog_bar=True)
-        
-        return gate_loss
-
-    def validation_step(self, batch, batch_idx):
-        x, y_global = batch
-        
-        # Get all outputs from the forward method in one go
-        result_dict = self(x, return_gate_outputs=True)
-        final_logits = result_dict['final_output']
-        gate_probs = result_dict['gate_outputs']
-        
-        moe_preds = torch.argmax(final_logits, dim=1)
-
-        # --- Gate validation ---
-        gate_preds = torch.argmax(gate_probs, dim=1)
-        minority_classes_tensor = torch.tensor(self.minority_classes, device=y_global.device)
-        y_meta = torch.isin(y_global, minority_classes_tensor).long()
-        
-        # Re-calculate gate_logits for loss calculation, as forward returns probabilities
-        gate_logits_val = self.gating_network(x)
-        val_gate_loss = F.cross_entropy(gate_logits_val, y_meta)
-        val_gate_acc = torch.sum(gate_preds == y_meta).item() / (len(y_meta) * 1.0)
-        
-        self.log('val_loss', val_gate_loss, prog_bar=True) # val_loss is monitored by callbacks
-        self.log('val_gate_acc', val_gate_acc, prog_bar=True)
-
-        # --- Full MoE validation ---
-        val_moe_acc = torch.sum(moe_preds == y_global).item() / (len(y_global) * 1.0)
-        self.log('val_moe_acc', val_moe_acc, prog_bar=True)
-
-        return val_gate_loss
-
-    def configure_optimizers(self):
-        # Optimizer for fine-tuning with a lower learning rate
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=3, verbose=True)
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val_moe_acc", # Monitor the metric we care about
-            },
-        }

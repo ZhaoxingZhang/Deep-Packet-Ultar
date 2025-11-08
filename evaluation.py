@@ -16,7 +16,7 @@ from ruamel.yaml import YAML
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ml.model import ResNet
+from ml.model import ResNet, GatingNetwork
 
 def load_data(data_path):
     table = pq.read_table(data_path)
@@ -42,7 +42,7 @@ def get_output_dir_from_model_path(model_path):
 @click.command()
 @click.option("-d", "--data_path", required=True, help="Path to the test data parquet file.")
 @click.option("-o", "--output_dir", required=True, help="Directory to save evaluation results.")
-@click.option("--eval-mode", type=click.Choice(['standard', 'ensemble']), default='standard', help="Evaluation mode.")
+@click.option("--eval-mode", type=click.Choice(['standard', 'ensemble', 'gating_ensemble']), default='standard', help="Evaluation mode.")
 # Options for 'standard' mode
 @click.option("--model_path", help="Path to the single model checkpoint for standard evaluation.")
 @click.option("--model_type", type=click.Choice(['resnet']), help="Type of model for standard evaluation.")
@@ -52,9 +52,12 @@ def get_output_dir_from_model_path(model_path):
 @click.option("--minority_classes", type=int, multiple=True, help="The original labels of the minority classes (e.g., 5 7).")
 @click.option("--baseline_weight", type=float, default=0.5, help="Weight for the baseline model.")
 @click.option("--minority_weight", type=float, default=0.5, help="Weight for the minority expert model.")
+# Options for 'gating_ensemble' mode
+@click.option("--gating_network_path", help="Path to the pre-trained Gating Network.")
 def evaluate(data_path, output_dir, eval_mode, model_path, model_type, 
              baseline_model_path, minority_model_path, minority_classes, 
-             baseline_weight, minority_weight):
+             baseline_weight, minority_weight,
+             gating_network_path):
     """Evaluates a trained model or an ensemble of models on the given test set."""
     
     os.makedirs(output_dir, exist_ok=True)
@@ -127,9 +130,60 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                 final_probs = (baseline_weight * base_probs) + (minority_weight * expert_probs_full)
                 
                 # 5. Get final prediction
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+
+    elif eval_mode == 'gating_ensemble':
+        if not baseline_model_path or not minority_model_path or not minority_classes or not gating_network_path:
+            raise ValueError("For 'gating_ensemble' mode, --baseline_model_path, --minority_model_path, --minority_classes, and --gating_network_path are required.")
+        
+        print(f"--- Running in GATING ENSEMBLE mode ---")
+        
+        # --- Load Models ---
+        print(f"Loading baseline model from {baseline_model_path}...")
+        baseline_model = ResNet.load_from_checkpoint(baseline_model_path)
+        baseline_model.eval()
+
+        print(f"Loading minority expert model from {minority_model_path}...")
+        minority_model = ResNet.load_from_checkpoint(minority_model_path)
+        minority_model.eval()
+
+        num_total_classes = baseline_model.out.out_features
+        print(f"Detected {num_total_classes} total classes.")
+
+        print(f"Loading pre-trained Gating Network from {gating_network_path}...")
+        gating_network = GatingNetwork(num_total_classes)
+        gating_network.load_state_dict(torch.load(gating_network_path))
+        gating_network.eval()
+
+        # --- Create Mappings and Evaluate ---
+        expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
+        print(f"Minority expert mapping: {expert_idx_to_original_label}")
+
+        with torch.no_grad():
+            for features, labels in test_dataloader:
+                # 1. Get probabilities from baseline model
+                base_outputs = baseline_model(features)
+                base_probs = torch.nn.functional.softmax(base_outputs, dim=1)
+
+                # 2. Get probabilities from minority expert
+                expert_outputs = minority_model(features)
+                expert_probs_small = torch.nn.functional.softmax(expert_outputs, dim=1)
+
+                # 3. Align expert probabilities to the full class space
+                expert_probs_full = torch.zeros_like(base_probs)
+                for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
+                    if expert_local_idx < expert_probs_small.shape[1]:
+                        expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
+                
+                # 4. Combine probabilities using the Gating Network
+                final_probs = gating_network(base_probs, expert_probs_full)
+                
+                # 5. Get final prediction
                 _, predicted = torch.max(final_probs, 1)
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
+
 
     # --- Common evaluation logic ---
     print("\nCalculating metrics...")
@@ -149,6 +203,10 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
             f.write(f"Baseline Model: {baseline_model_path}\n")
             f.write(f"Minority Model: {minority_model_path}\n")
             f.write(f"Weights (Base/Minority): {baseline_weight}/{minority_weight}\n\n")
+        elif eval_mode == 'gating_ensemble':
+            f.write(f"Baseline Model: {baseline_model_path}\n")
+            f.write(f"Minority Model: {minority_model_path}\n")
+            f.write(f"Gating Network Path: {gating_network_path}\n\n")
         f.write(f"Accuracy: {accuracy:.4f}\n")
         f.write("\nClassification Report:\n")
         f.write(report)

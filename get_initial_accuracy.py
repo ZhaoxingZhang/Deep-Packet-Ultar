@@ -11,12 +11,12 @@ import sys
 # Make sure the ml module is in the python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ml.model import ResNet, MixtureOfExperts
+from ml.model import ResNet
 
 @click.command()
 @click.option("--model_path", required=True, type=click.Path(exists=True))
 @click.option("--config_path", required=True, type=click.Path(exists=True), help="Path to the YAML config file used for training the model.")
-@click.option("--model_type", required=True, type=click.Choice(['resnet', 'moe']))
+@click.option("--model_type", required=True, type=click.Choice(['resnet']))
 def get_accuracy(model_path, config_path, model_type):
     """Calculates the accuracy of a model on the known classes from its corresponding test set."""
 
@@ -54,14 +54,6 @@ def get_accuracy(model_path, config_path, model_type):
     print(f"Loading {model_type} model from {model_path}...")
     if model_type == 'resnet':
         model = ResNet.load_from_checkpoint(model_path)
-    elif model_type == 'moe':
-        generalist_expert = ResNet.load_from_checkpoint(config['generalist_expert_path'])
-        minority_expert = ResNet.load_from_checkpoint(config['minority_expert_path'])
-        model = MixtureOfExperts.load_from_checkpoint(
-            model_path,
-            generalist_expert=generalist_expert,
-            minority_expert=minority_expert
-        )
     else:
         raise ValueError("Invalid model type")
 
