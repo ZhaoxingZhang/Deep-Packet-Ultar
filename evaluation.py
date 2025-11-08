@@ -130,6 +130,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                 final_probs = (baseline_weight * base_probs) + (minority_weight * expert_probs_full)
                 
                 # 5. Get final prediction
+                _, predicted = torch.max(final_probs, 1)
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
 
