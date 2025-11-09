@@ -166,3 +166,6 @@ transfer.sh
 
 # backup file
 *.bak
+
+# 密钥文件
+*.key
