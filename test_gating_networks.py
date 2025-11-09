@@ -182,16 +182,21 @@ def run_training_command(config):
 
 def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, minority_model_path, minority_classes):
     """运行评估脚本"""
+    # 创建输出目录
+    output_dir = os.path.join(LOG_DIR, f"evaluation_results_{model_name}")
+    os.makedirs(output_dir, exist_ok=True)
+
     cmd = [
         PYTHON_PATH,
         "evaluation.py",
         "--data_path", test_data_path,
+        "--output_dir", output_dir,
         "--baseline_model_path", baseline_model_path,
         "--minority_model_path", minority_model_path,
         "--gating_network_path", model_path,
-        "--minority_classes"] + [str(c) for c in minority_classes] + [
-        "--eval_mode", "gating_ensemble"
-    ]
+        "--eval-mode", "gating_ensemble",
+        "--minority_classes"
+    ] + [str(c) for c in minority_classes]
 
     # 创建评估日志文件
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
