@@ -188,10 +188,9 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
         "--data_path", test_data_path,
         "--baseline_model_path", baseline_model_path,
         "--minority_model_path", minority_model_path,
-        "--gating_model_path", model_path,
+        "--gating_network_path", model_path,
         "--minority_classes"] + [str(c) for c in minority_classes] + [
-        "--eval_mode", "gating_ensemble",
-        "--model_type", "resnet"
+        "--eval_mode", "gating_ensemble"
     ]
 
     # 创建评估日志文件
