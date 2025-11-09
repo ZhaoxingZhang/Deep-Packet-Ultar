@@ -1,0 +1,52 @@
+# 门控网络测试配置文件
+# 这个配置文件定义了基础训练参数和要测试的不同门控网络配置
+
+# 基础配置：所有测试都会使用这些参数
+base_config:
+  train_data_path: "train_test_data/exp2_imbalanced_small/traffic_classification/train.parquet"
+  baseline_model_path: "model/model/resnet_traffic_featurize.model.ckpt"
+  minority_model_path: "model/model/minority_expert_resnet.pth.ckpt"
+  minority_classes: [5, 7]
+  epochs: 10
+  lr: 0.001
+
+# 测试配置：定义要测试的不同门控网络参数
+test_configs:
+  # Lambda值较小：更关注准确率
+  - name: "lambda_0.1"
+    output_path: "model/model/gating_network_lambda_0.1.ckpt"
+    lambda_macro: 0.1
+
+  # Lambda值中等：平衡准确率和Macro-F1
+  - name: "lambda_0.3"
+    output_path: "model/model/gating_network_lambda_0.3.ckpt"
+    lambda_macro: 0.3
+
+  # Lambda值中等：平衡准确率和Macro-F1
+  - name: "lambda_0.5"
+    output_path: "model/model/gating_network_lambda_0.5.ckpt"
+    lambda_macro: 0.5
+
+  # Lambda值较大：更关注Macro-F1
+  - name: "lambda_0.7"
+    output_path: "model/model/gating_network_lambda_0.7.ckpt"
+    lambda_macro: 0.7
+
+  # 自适应调度：动态调整lambda值
+  - name: "adaptive"
+    output_path: "model/model/gating_network_adaptive.ckpt"
+    use_adaptive: true
+    initial_lambda: 0.1
+    final_lambda: 0.7
+
+# 说明：
+# - lambda_macro: 控制Macro-F1损失在总损失中的权重 (0-1)
+#   * 0.0: 纯CrossEntropy损失 (只关注准确率)
+#   * 1.0: 纯Macro-F1损失 (只关注类别平衡)
+#   * 0.5: 两者平衡
+#
+# - use_adaptive: 是否使用自适应调度
+#   * true: lambda值从initial_lambda逐渐增加到final_lambda
+#   * false: 使用固定的lambda_macro值
+#
+# - minority_classes: 需要特别关注的少数类标签

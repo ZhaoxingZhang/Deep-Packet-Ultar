@@ -1,0 +1,51 @@
+{
+  "timestamp": "2025-11-09T01:33:58.834335",
+  "summary": {
+    "total_models": 3,
+    "successful_trainings": 0,
+    "successful_evaluations": 0
+  },
+  "results": [
+    {
+      "config": {
+        "name": "lambda_0.3",
+        "output_path": "model/model/gating_network_lambda_0.3.ckpt",
+        "lambda_macro": 0.3
+      },
+      "training": {
+        "success": false,
+        "time": 5.415432929992676,
+        "error": ""
+      },
+      "evaluation": {}
+    },
+    {
+      "config": {
+        "name": "lambda_0.5",
+        "output_path": "model/model/gating_network_lambda_0.5.ckpt",
+        "lambda_macro": 0.5
+      },
+      "training": {
+        "success": false,
+        "time": 2.7203240394592285,
+        "error": ""
+      },
+      "evaluation": {}
+    },
+    {
+      "config": {
+        "name": "adaptive",
+        "output_path": "model/model/gating_network_adaptive.ckpt",
+        "use_adaptive": true,
+        "initial_lambda": 0.1,
+        "final_lambda": 0.7
+      },
+      "training": {
+        "success": false,
+        "time": 2.7910187244415283,
+        "error": ""
+      },
+      "evaluation": {}
+    }
+  ]
+}

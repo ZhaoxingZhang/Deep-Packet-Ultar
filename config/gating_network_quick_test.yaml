@@ -1,0 +1,26 @@
+# 门控网络快速测试配置文件
+# 用于快速验证的简化配置
+
+base_config:
+  train_data_path: "train_test_data/exp2_imbalanced_small/traffic_classification/train.parquet"
+  baseline_model_path: "model/model/resnet_traffic_featurize.model.ckpt"
+  minority_model_path: "model/model/minority_expert_resnet.pth.ckpt"
+  minority_classes: [5, 7]
+  epochs: 5  # 减少训练轮数以加快测试
+  lr: 0.001
+
+test_configs:
+  # 只测试三个代表性配置
+  - name: "lambda_0.3"
+    output_path: "model/model/gating_network_lambda_0.3.ckpt"
+    lambda_macro: 0.3
+
+  - name: "lambda_0.5"
+    output_path: "model/model/gating_network_lambda_0.5.ckpt"
+    lambda_macro: 0.5
+
+  - name: "adaptive"
+    output_path: "model/model/gating_network_adaptive.ckpt"
+    use_adaptive: true
+    initial_lambda: 0.1
+    final_lambda: 0.7
