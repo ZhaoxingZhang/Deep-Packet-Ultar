@@ -174,10 +174,10 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
 
         if use_adaptive:
             print(f"Epoch {epoch+1}/{epochs}, Total: {avg_loss:.4f}, CE: {avg_ce_loss:.4f}, "
-                  f"Macro-F1: {avg_macro_f1_loss:.4f}, Acc: {accuracy:.4f}, λ: {current_lambda:.3f}")
+                  f"Macro-F1 Loss: {avg_macro_f1_loss:.4f}, Acc: {accuracy:.4f}, λ: {current_lambda:.3f}")
         else:
             print(f"Epoch {epoch+1}/{epochs}, Total: {avg_loss:.4f}, CE: {avg_ce_loss:.4f}, "
-                  f"Macro-F1: {avg_macro_f1_loss:.4f}, Acc: {accuracy:.4f}, λ: {lambda_macro:.3f}")
+                  f"Macro-F1 Loss: {avg_macro_f1_loss:.4f}, Acc: {accuracy:.4f}, λ: {lambda_macro:.3f}")
     
     # --- 5. Save Gating Network ---
     output_dir = os.path.dirname(output_path)

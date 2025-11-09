@@ -117,66 +117,39 @@ def run_training_command(config):
     else:
         cmd.extend(["--lambda_macro", str(config["lambda_macro"])])
 
-    # 创建日志文件
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(LOG_DIR, f"training_{config['name']}_{timestamp}.log")
-
     print(f"\n=== 开始训练: {config['name']} ===")
     print(f"命令: {' '.join(cmd)}")
-    print(f"日志文件: {log_file}")
 
     start_time = time.time()
 
-    # 运行命令并输出到日志文件
-    with open(log_file, 'w', encoding='utf-8') as f:
-        # 写入命令头部信息
-        f.write(f"=== 门控网络训练日志: {config['name']} ===\n")
-        f.write(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"命令: {' '.join(cmd)}\n")
-        f.write(f"配置: {config}\n")
-        f.write("="*80 + "\n\n")
+    # 运行命令并实时输出到控制台
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, universal_newlines=True)
 
-        # 运行命令并实时写入日志
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 text=True, universal_newlines=True)
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line.strip())
+        print(line.strip(), end='')  # 实时显示
 
-        output_lines = []
-        for line in iter(process.stdout.readline, ''):
-            output_lines.append(line.strip())
-            print(line.strip(), end='')  # 实时显示
-            f.write(line)
-            f.flush()
-
-        process.wait()
-        result = subprocess.CompletedProcess(process.args, process.returncode,
-                                           ''.join(output_lines), '')
+    process.wait()
+    result = subprocess.CompletedProcess(process.args, process.returncode,
+                                       ''.join(output_lines), '')
 
     end_time = time.time()
     training_time = end_time - start_time
-
-    # 在日志文件末尾写入总结
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"\n\n=== 训练总结 ===\n")
-        f.write(f"结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"总耗时: {training_time:.1f}秒\n")
-        f.write(f"返回码: {result.returncode}\n")
-        f.write(f"成功: {'是' if result.returncode == 0 else '否'}\n")
 
     if result.returncode == 0:
         print(f"\n✅ {config['name']} 训练成功 (耗时: {training_time:.1f}秒)")
         return {
             "success": True,
             "training_time": training_time,
-            "log_file": log_file,
             "output": result.stdout
         }
     else:
         print(f"\n❌ {config['name']} 训练失败 (耗时: {training_time:.1f}秒)")
-        print(f"详细信息请查看日志: {log_file}")
         return {
             "success": False,
             "training_time": training_time,
-            "log_file": log_file,
             "output": result.stdout
         }
 
@@ -200,62 +173,38 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
     for c in minority_classes:
         cmd.extend(["--minority_classes", str(c)])
 
-    # 创建评估日志文件
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(LOG_DIR, f"evaluation_{model_name}_{timestamp}.log")
-
     print(f"\n=== 评估模型: {model_name} ===")
     print(f"命令: {' '.join(cmd)}")
-    print(f"日志文件: {log_file}")
 
     start_time = time.time()
 
-    # 运行命令并输出到日志文件
-    with open(log_file, 'w', encoding='utf-8') as f:
-        # 写入评估头部信息
-        f.write(f"=== 门控网络评估日志: {model_name} ===\n")
-        f.write(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"模型路径: {model_path}\n")
-        f.write(f"命令: {' '.join(cmd)}\n")
-        f.write("="*80 + "\n\n")
+    # 运行命令并实时输出到控制台
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, universal_newlines=True)
 
-        # 运行命令并实时写入日志
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 text=True, universal_newlines=True)
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line.strip())
+        print(line.strip(), end='')  # 实时显示
 
-        output_lines = []
-        for line in iter(process.stdout.readline, ''):
-            output_lines.append(line.strip())
-            print(line.strip(), end='')  # 实时显示
-            f.write(line)
-            f.flush()
-
-        process.wait()
-        result = subprocess.CompletedProcess(process.args, process.returncode,
-                                           ''.join(output_lines), '')
+    process.wait()
+    result = subprocess.CompletedProcess(process.args, process.returncode,
+                                       ''.join(output_lines), '')
 
     end_time = time.time()
     evaluation_time = end_time - start_time
-
-    # 在日志文件末尾写入总结
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"\n\n=== 评估总结 ===\n")
-        f.write(f"结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"评估耗时: {evaluation_time:.1f}秒\n")
-        f.write(f"返回码: {result.returncode}\n")
-        f.write(f"成功: {'是' if result.returncode == 0 else '否'}\n")
 
     if result.returncode == 0:
         print(f"\n✅ {model_name} 评估成功 (耗时: {evaluation_time:.1f}秒)")
 
         # 解析评估结果
         try:
-            output_lines = result.stdout.split('\n')
+            output_text = result.stdout
             accuracy = None
             macro_avg = None
             minority_classes = {}
 
-            for line in output_lines:
+            for line in output_text.split('\n'):
                 line = line.strip()
 
                 # 解析准确率
@@ -279,9 +228,9 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
                     class_id = int(line)
                     # 找到少数类，下一行是指标
                     try:
-                        idx = output_lines.index(line)
-                        if idx + 1 < len(output_lines):
-                            next_line = output_lines[idx + 1].strip()
+                        idx = output_text.split('\n').index(line)
+                        if idx + 1 < len(output_text.split('\n')):
+                            next_line = output_text.split('\n')[idx + 1].strip()
                             if "precision" in next_line and len(next_line.split()) >= 4:
                                 metrics = next_line.split()
                                 try:
@@ -295,51 +244,26 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
                     except (ValueError, IndexError):
                         pass
 
-            # 在日志文件中写入解析结果
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write(f"\n=== 解析结果 ===\n")
-                f.write(f"准确率: {accuracy:.4f}\n" if accuracy else "准确率: N/A\n")
-                f.write(f"Macro-F1: {macro_avg:.4f}\n" if macro_avg else "Macro-F1: N/A\n")
-                if minority_classes:
-                    f.write(f"少数类表现:\n")
-                    for class_id, metrics in minority_classes.items():
-                        f.write(f"  类别{class_id}: F1={metrics.get('f1', 0):.4f}, ")
-                        f.write(f"Precision={metrics.get('precision', 0):.4f}, ")
-                        f.write(f"Recall={metrics.get('recall', 0):.4f}\n")
-
             return {
                 "success": True,
                 "evaluation_time": evaluation_time,
                 "accuracy": accuracy,
                 "macro_avg": macro_avg,
                 "minority_classes": minority_classes,
-                "log_file": log_file,
                 "output": result.stdout
             }
         except Exception as e:
             print(f"⚠️ 解析评估结果时出错: {e}")
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write(f"\n=== 解析错误 ===\n")
-                f.write(f"错误信息: {e}\n")
             return {
                 "success": True,
                 "evaluation_time": evaluation_time,
-                "log_file": log_file,
                 "output": result.stdout
             }
     else:
         print(f"\n❌ {model_name} 评估失败 (耗时: {evaluation_time:.1f}秒)")
-        print(f"详细信息请查看日志: {log_file}")
-
-        # 在日志文件中写入错误信息
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"\n=== 错误信息 ===\n")
-            f.write(f"错误输出: {result.stderr}\n")
-
         return {
             "success": False,
             "evaluation_time": evaluation_time,
-            "log_file": log_file,
             "output": result.stdout,
             "error": result.stderr
         }
@@ -358,11 +282,11 @@ def generate_report(results):
     print(f"  评估成功: {len(successful_evaluations)}/{len(results)}")
 
     if successful_evaluations:
-        print(f"\n🏆 性能排名 (按Macro-F1):")
+        print(f"\n🏆 性能排名 (按Macro-F1 Score):")
 
-        # 按macro_avg排序
+        # 按macro_avg排序，过滤掉None值
         ranked = sorted(successful_evaluations,
-                       key=lambda x: x["evaluation"].get("macro_avg", 0),
+                       key=lambda x: x["evaluation"].get("macro_avg") or 0,
                        reverse=True)
 
         for i, result in enumerate(ranked, 1):
@@ -373,7 +297,7 @@ def generate_report(results):
             print(f"   训练时间: {result['training']['training_time']:.1f}秒")
             print(f"   评估时间: {eval_result['evaluation_time']:.1f}秒")
             print(f"   准确率: {eval_result.get('accuracy', 'N/A'):.4f}")
-            print(f"   Macro-F1: {eval_result.get('macro_avg', 'N/A'):.4f}")
+            print(f"   Macro-F1 Score: {eval_result.get('macro_avg', 'N/A'):.4f}")
 
             # 显示少数类表现
             minority_classes = eval_result.get("minority_classes", {})
