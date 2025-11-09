@@ -37,19 +37,29 @@ class SoftMacroF1Loss(nn.Module):
         # Convert targets to one-hot encoding
         targets_one_hot = F.one_hot(targets, num_classes=self.num_classes).float()
 
-        # Calculate soft True Positives, False Positives, and False Negatives
-        tp = torch.sum(probs * targets_one_hot, dim=0)  # [num_classes]
-        fp = torch.sum(probs * (1 - targets_one_hot), dim=0)  # [num_classes]
-        fn = torch.sum((1 - probs) * targets_one_hot, dim=0)  # [num_classes]
+        # Initialize per-class metrics
+        f1_per_class = []
 
-        # Calculate soft precision and recall for each class
-        precision = tp / (tp + fp + self.epsilon)
-        recall = tp / (tp + fn + self.epsilon)
+        # Calculate F1 for each class separately
+        for class_idx in range(self.num_classes):
+            # Extract predictions and targets for this class
+            class_probs = probs[:, class_idx]  # [batch_size]
+            class_targets = targets_one_hot[:, class_idx]  # [batch_size]
 
-        # Calculate soft F1 score for each class
-        f1_per_class = 2 * precision * recall / (precision + recall + self.epsilon)
+            # Calculate TP, FP, FN for this class
+            tp = torch.sum(class_probs * class_targets)
+            fp = torch.sum(class_probs * (1 - class_targets))
+            fn = torch.sum((1 - class_probs) * class_targets)
 
-        # Macro-F1: average across all classes
+            # Calculate precision, recall, F1 for this class
+            precision = tp / (tp + fp + self.epsilon)
+            recall = tp / (tp + fn + self.epsilon)
+            f1 = 2 * precision * recall / (precision + recall + self.epsilon)
+
+            f1_per_class.append(f1)
+
+        # Stack and calculate Macro-F1 (average across all classes)
+        f1_per_class = torch.stack(f1_per_class)
         macro_f1 = torch.mean(f1_per_class)
 
         # Return loss (1 - macro_f1 to minimize)

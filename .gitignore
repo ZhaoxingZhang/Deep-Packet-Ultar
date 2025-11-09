@@ -169,3 +169,5 @@ transfer.sh
 
 # 密钥文件
 *.key
+
+log/

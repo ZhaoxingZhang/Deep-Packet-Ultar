@@ -256,24 +256,44 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
             minority_classes = {}
 
             for line in output_lines:
+                line = line.strip()
+
+                # 解析准确率
                 if "Accuracy:" in line:
-                    accuracy = float(line.split(":")[1].strip())
+                    try:
+                        accuracy = float(line.split(":")[1].strip())
+                    except (ValueError, IndexError):
+                        pass
+
+                # 解析macro avg - f1-score在第4个位置(索引3)
                 elif "macro avg" in line:
-                    parts = line.split()
-                    macro_avg = float(parts[2]) if len(parts) > 2 else None
-                elif line.strip().isdigit() and int(line.strip()) in [5, 7]:
+                    try:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            macro_avg = float(parts[3])  # f1-score在第4个位置
+                    except (ValueError, IndexError):
+                        pass
+
+                # 解析少数类指标 - 支持所有少数类
+                elif line.isdigit():
+                    class_id = int(line)
                     # 找到少数类，下一行是指标
-                    idx = output_lines.index(line)
-                    if idx + 1 < len(output_lines):
-                        next_line = output_lines[idx + 1]
-                        if "precision" in next_line:
-                            metrics = next_line.split()
-                            if len(metrics) >= 4:
-                                minority_classes[int(line.strip())] = {
-                                    "precision": float(metrics[0]),
-                                    "recall": float(metrics[1]),
-                                    "f1": float(metrics[2])
-                                }
+                    try:
+                        idx = output_lines.index(line)
+                        if idx + 1 < len(output_lines):
+                            next_line = output_lines[idx + 1].strip()
+                            if "precision" in next_line and len(next_line.split()) >= 4:
+                                metrics = next_line.split()
+                                try:
+                                    minority_classes[class_id] = {
+                                        "precision": float(metrics[0]),
+                                        "recall": float(metrics[1]),
+                                        "f1": float(metrics[2])
+                                    }
+                                except ValueError:
+                                    pass
+                    except (ValueError, IndexError):
+                        pass
 
             # 在日志文件中写入解析结果
             with open(log_file, 'a', encoding='utf-8') as f:
