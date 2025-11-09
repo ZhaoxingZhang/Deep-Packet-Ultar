@@ -102,7 +102,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
 
         # Create the mapping from the expert's output index (0, 1, ...) to the original class label
         expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
-        print(f"Minority expert mapping: {expert_idx_to_original_label}")
+        print(f"Minority expert mapping: {expert_idx_to_original_label}\n")
 
         with torch.no_grad():
             for features, labels in test_dataloader:
@@ -138,8 +138,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         if not baseline_model_path or not minority_model_path or not minority_classes or not gating_network_path:
             raise ValueError("For 'gating_ensemble' mode, --baseline_model_path, --minority_model_path, --minority_classes, and --gating_network_path are required.")
         
-        print(f"--- Running in GATING ENSEMBLE mode ---")
-        
+        print(f"--- Running in GATING ENSEMBLE mode ---\n")
+
         # --- Load Models ---
         print(f"Loading baseline model from {baseline_model_path}...")
         baseline_model = ResNet.load_from_checkpoint(baseline_model_path)
@@ -159,7 +159,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
 
         # --- Create Mappings and Evaluate ---
         expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
-        print(f"Minority expert mapping: {expert_idx_to_original_label}")
+        print(f"Minority expert mapping: {expert_idx_to_original_label}\n")
 
         with torch.no_grad():
             for features, labels in test_dataloader:
@@ -193,8 +193,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
     cm = confusion_matrix(all_labels, all_preds)
 
     print("--- Evaluation Results ---")
-    print(f"Accuracy: {accuracy:.4f}")
-    print("\nClassification Report:")
+    print(f"Accuracy: {accuracy:.4f}\n")
+    print("Classification Report:")
     print(report)
     
     results_file = os.path.join(output_dir, "evaluation_summary.txt")

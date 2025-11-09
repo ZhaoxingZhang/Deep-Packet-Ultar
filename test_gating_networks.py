@@ -128,8 +128,8 @@ def run_training_command(config):
 
     output_lines = []
     for line in iter(process.stdout.readline, ''):
-        output_lines.append(line.strip())
-        print(line.strip(), end='')  # 实时显示
+        output_lines.append(line)
+        print(line, end='')  # 实时显示，保留换行符
 
     process.wait()
     result = subprocess.CompletedProcess(process.args, process.returncode,
@@ -184,8 +184,8 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
 
     output_lines = []
     for line in iter(process.stdout.readline, ''):
-        output_lines.append(line.strip())
-        print(line.strip(), end='')  # 实时显示
+        output_lines.append(line)
+        print(line, end='')  # 实时显示，保留换行符
 
     process.wait()
     result = subprocess.CompletedProcess(process.args, process.returncode,
@@ -437,6 +437,9 @@ def run_test_gating_networks(config):
 
     print("🚀 开始门控网络自动化测试")
     print(f"配置文件: {config}")
+
+    # 记录开始时间
+    start_time = time.time()
 
     # 加载配置文件
     user_config = load_config(config)

@@ -1,0 +1,29 @@
+# 门控网络快速测试配置文件
+# 用于快速验证的简化配置
+
+base_config:
+  train_data_path: "/home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet"
+  baseline_model_path: "model/resnet_traffic_featurize.model.ckpt"
+  minority_model_path: "model/minority_expert_resnet.pth.ckpt"
+  minority_classes: [5, 7]
+  epochs: 30  # 减少训练轮数以加快测试
+  lr: 0.0005
+
+test_configs:
+  - name: "lambda_0.3"
+    output_path: "model/gating_network_lambda_0.1.ckpt"
+    lambda_macro: 0.1
+
+  - name: "lambda_0.3"
+    output_path: "model/gating_network_lambda_0.3.ckpt"
+    lambda_macro: 0.3
+
+  - name: "lambda_0.5"
+    output_path: "model/gating_network_lambda_0.5.ckpt"
+    lambda_macro: 0.5
+
+  - name: "adaptive"
+    output_path: "model/gating_network_adaptive.ckpt"
+    use_adaptive: true
+    initial_lambda: 0.1
+    final_lambda: 0.7
