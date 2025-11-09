@@ -186,17 +186,19 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
     output_dir = os.path.join(LOG_DIR, f"evaluation_results_{model_name}")
     os.makedirs(output_dir, exist_ok=True)
 
-    cmd = [
-        PYTHON_PATH,
-        "evaluation.py",
-        "--data_path", test_data_path,
-        "--output_dir", output_dir,
-        "--baseline_model_path", baseline_model_path,
-        "--minority_model_path", minority_model_path,
-        "--gating_network_path", model_path,
-        "--eval-mode", "gating_ensemble",
-        "--minority_classes"
-    ] + [str(c) for c in minority_classes]
+    cmd = [PYTHON_PATH, "evaluation.py"]
+
+    # 添加所有参数
+    cmd.extend(["--data_path", test_data_path])
+    cmd.extend(["--output_dir", output_dir])
+    cmd.extend(["--baseline_model_path", baseline_model_path])
+    cmd.extend(["--minority_model_path", minority_model_path])
+    cmd.extend(["--gating_network_path", model_path])
+    cmd.extend(["--eval-mode", "gating_ensemble"])
+
+    # 为每个minority_class添加单独的--minority_classes参数
+    for c in minority_classes:
+        cmd.extend(["--minority_classes", str(c)])
 
     # 创建评估日志文件
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
