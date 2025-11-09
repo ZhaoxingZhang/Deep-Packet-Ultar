@@ -185,7 +185,7 @@ def run_evaluation(model_path, model_name, test_data_path, baseline_model_path, 
     cmd = [
         PYTHON_PATH,
         "evaluation.py",
-        "--test_data_path", test_data_path,
+        "--data_path", test_data_path,
         "--baseline_model_path", baseline_model_path,
         "--minority_model_path", minority_model_path,
         "--gating_model_path", model_path,

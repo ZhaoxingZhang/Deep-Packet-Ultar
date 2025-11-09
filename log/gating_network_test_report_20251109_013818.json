@@ -1,0 +1,69 @@
+{
+  "timestamp": "2025-11-09T01:38:18.469230",
+  "summary": {
+    "total_models": 3,
+    "successful_trainings": 3,
+    "successful_evaluations": 0
+  },
+  "results": [
+    {
+      "config": {
+        "name": "lambda_0.3",
+        "output_path": "model/model/gating_network_lambda_0.3.ckpt",
+        "lambda_macro": 0.3
+      },
+      "training": {
+        "success": true,
+        "time": 59.35736393928528,
+        "error": ""
+      },
+      "evaluation": {
+        "success": false,
+        "evaluation_time": 10.444566011428833,
+        "log_file": "log/evaluation_lambda_0.3_20251109_013538.log",
+        "output": "Usage: evaluation.py [OPTIONS]Try 'evaluation.py --help' for help.Error: No such option: --test_data_path Did you mean --data_path?",
+        "error": ""
+      }
+    },
+    {
+      "config": {
+        "name": "lambda_0.5",
+        "output_path": "model/model/gating_network_lambda_0.5.ckpt",
+        "lambda_macro": 0.5
+      },
+      "training": {
+        "success": true,
+        "time": 62.67914295196533,
+        "error": ""
+      },
+      "evaluation": {
+        "success": false,
+        "evaluation_time": 5.184276103973389,
+        "log_file": "log/evaluation_lambda_0.5_20251109_013656.log",
+        "output": "Usage: evaluation.py [OPTIONS]Try 'evaluation.py --help' for help.Error: No such option: --test_data_path Did you mean --data_path?",
+        "error": ""
+      }
+    },
+    {
+      "config": {
+        "name": "adaptive",
+        "output_path": "model/model/gating_network_adaptive.ckpt",
+        "use_adaptive": true,
+        "initial_lambda": 0.1,
+        "final_lambda": 0.7
+      },
+      "training": {
+        "success": true,
+        "time": 63.482787132263184,
+        "error": ""
+      },
+      "evaluation": {
+        "success": false,
+        "evaluation_time": 5.311398983001709,
+        "log_file": "log/evaluation_adaptive_20251109_013810.log",
+        "output": "Usage: evaluation.py [OPTIONS]Try 'evaluation.py --help' for help.Error: No such option: --test_data_path Did you mean --data_path?",
+        "error": ""
+      }
+    }
+  ]
+}
