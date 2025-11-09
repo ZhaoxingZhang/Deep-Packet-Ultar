@@ -25,7 +25,7 @@ LOG_DIR = "log"
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # 配置参数
-PYTHON_PATH = "/usr/local/Caskroom/miniconda/base/envs/deep_packet/bin/python"
+PYTHON_PATH = "python"
 
 # 默认基础配置
 DEFAULT_BASE_CONFIG = {
