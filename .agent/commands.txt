@@ -68,6 +68,12 @@ python train_resnet.py \
 --data_path /home/featurize/data/train_test_data/traffic_minority_expert/traffic_classification \
 --model_path model/minority_expert_resnet.pth \
 --task traffic
+# 验证少数类专家
+python evaluation.py \
+    --output_dir evaluation_results/minority_expert_resnet \
+    --model_path model/minority_expert_resnet.pth.ckpt \
+    --data_path /home/featurize/data/train_test_data/traffic_minority_expert/traffic_classification/test.parquet \
+    --model_type resnet
 # 验证5、7类是否混淆
 python analyze_baseline_confidence.py \
 --model_path model/resnet_vpn_featurize.model.ckpt \

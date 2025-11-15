@@ -107,77 +107,52 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     print(f"Created training dataset for Gating Network with {len(gating_dataset)} samples.")
 
     # --- 4. Train Gating Network ---
+    # Calculate class weights for CrossEntropyLoss
+    class_counts_full = torch.bincount(gating_train_labels, minlength=num_total_classes)
+    
+    # Using the sklearn formula: n_samples / (n_classes * np.bincount(y))
+    # Convert to float to avoid integer division
+    # Handle potential Inf if a class has 0 samples: set weight to 0 for such classes
+    class_weights = len(gating_train_labels) / (num_total_classes * class_counts_full.float())
+    class_weights[class_counts_full == 0] = 0.0 # Set weight to 0 for classes not present
+
+    # Move weights to the same device as the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    class_weights = class_weights.to(device)
+
     gating_network = GatingNetwork(num_total_classes)
+    gating_network.to(device) # Move model to device
     optimizer = torch.optim.Adam(gating_network.parameters(), lr=lr)
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
-    # Choose the appropriate loss function
-    if use_adaptive:
-        print(f"Using adaptive Macro-F1 + CE loss (λ: {initial_lambda} → {final_lambda})")
-        criterion = AdaptiveMacroF1CELoss(
-            num_classes=num_total_classes,
-            initial_lambda=initial_lambda,
-            final_lambda=final_lambda,
-            total_epochs=epochs
-        )
-    else:
-        print(f"Using combined Macro-F1 + CE loss (λ_macro = {lambda_macro})")
-        criterion = CombinedMacroF1CELoss(
-            num_classes=num_total_classes,
-            lambda_macro=lambda_macro
-        )
-
+    print(f"Calculated class weights: {class_weights}")
     print(f"Training Gating Network for {epochs} epochs...")
     for epoch in range(epochs):
         gating_network.train()
         total_loss = 0
-        total_ce_loss = 0
-        total_macro_f1_loss = 0
         correct_preds = 0
         total_samples = 0
-
         for inputs, labels in gating_dataloader:
+            inputs, labels = inputs.to(device), labels.to(device) # Move data to device
             optimizer.zero_grad()
-
+            
             # Split concatenated inputs back into two probability vectors
             current_base_probs = inputs[:, :num_total_classes]
             current_expert_probs_full = inputs[:, num_total_classes:]
 
             outputs = gating_network(current_base_probs, current_expert_probs_full)
-
-            # Calculate loss
-            if use_adaptive:
-                loss_dict = criterion(outputs, labels, current_epoch=epoch)
-                current_lambda = loss_dict['current_lambda']
-            else:
-                loss_dict = criterion(outputs, labels)
-                current_lambda = lambda_macro
-
-            loss = loss_dict['total_loss']
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-
-            # Accumulate losses
+            
             total_loss += loss.item()
-            total_ce_loss += loss_dict['ce_loss'].item()
-            total_macro_f1_loss += loss_dict['macro_f1_loss'].item()
-
-            # Calculate accuracy
             _, predicted = torch.max(outputs, 1)
             correct_preds += (predicted == labels).sum().item()
             total_samples += labels.size(0)
 
-        # Calculate averages
         avg_loss = total_loss / len(gating_dataloader)
-        avg_ce_loss = total_ce_loss / len(gating_dataloader)
-        avg_macro_f1_loss = total_macro_f1_loss / len(gating_dataloader)
         accuracy = correct_preds / total_samples
-
-        if use_adaptive:
-            print(f"Epoch {epoch+1}/{epochs}, Total: {avg_loss:.4f}, CE: {avg_ce_loss:.4f}, "
-                  f"Macro-F1 Loss: {avg_macro_f1_loss:.4f}, Acc: {accuracy:.4f}, λ: {current_lambda:.3f}")
-        else:
-            print(f"Epoch {epoch+1}/{epochs}, Total: {avg_loss:.4f}, CE: {avg_ce_loss:.4f}, "
-                  f"Macro-F1 Loss: {avg_macro_f1_loss:.4f}, Acc: {accuracy:.4f}, λ: {lambda_macro:.3f}")
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}")
     
     # --- 5. Save Gating Network ---
     output_dir = os.path.dirname(output_path)
