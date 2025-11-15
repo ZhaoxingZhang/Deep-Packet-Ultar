@@ -96,17 +96,24 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     gating_train_inputs = torch.cat(gating_train_inputs, dim=0)
     gating_train_labels = torch.cat(gating_train_labels, dim=0)
 
-    gating_dataset = TensorDataset(gating_train_inputs, gating_train_labels)
-    gating_dataloader = DataLoader(gating_dataset, batch_size=64, shuffle=True)
-    print(f"Created training dataset for Gating Network with {len(gating_dataset)} samples.")
-
-    # --- 4. Train Gating Network ---
-    # Calculate class weights for CrossEntropyLoss
-    class_counts_full = torch.bincount(gating_train_labels, minlength=num_total_classes)
+    full_gating_dataset = TensorDataset(gating_train_inputs, gating_train_labels)
     
-    # Using the sklearn formula: n_samples / (n_classes * np.bincount(y))
-    # Add a small epsilon to avoid division by zero
-    class_weights = len(gating_train_labels) / (num_total_classes * (class_counts_full.float() + 1e-6))
+    # --- 4. Create Training and Validation Sets ---
+    val_split = 0.1
+    val_size = int(len(full_gating_dataset) * val_split)
+    train_size = len(full_gating_dataset) - val_size
+    train_dataset, val_dataset = torch.utils.data.random_split(full_gating_dataset, [train_size, val_size])
+
+    train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=256, shuffle=False)
+    print(f"Created training dataset with {len(train_dataset)} samples and validation dataset with {len(val_dataset)} samples.")
+
+    # --- 5. Train Gating Network ---
+    # Calculate class weights using only the training set labels
+    train_labels = torch.cat([labels for _, labels in train_dataloader])
+    class_counts_full = torch.bincount(train_labels, minlength=num_total_classes)
+    
+    class_weights = len(train_labels) / (num_total_classes * (class_counts_full.float() + 1e-6))
     class_weights = class_weights.to(device)
     print(f"Calculated class weights: {class_weights}")
 
@@ -114,13 +121,16 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     optimizer = torch.optim.Adam(gating_network.parameters(), lr=lr)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
+    best_val_loss = float('inf')
     print(f"Training Gating Network for {epochs} epochs...")
+
     for epoch in range(epochs):
+        # --- Training Phase ---
         gating_network.train()
-        total_loss = 0
-        correct_preds = 0
-        total_samples = 0
-        for inputs, labels in gating_dataloader:
+        total_train_loss = 0
+        train_correct_preds = 0
+        train_total_samples = 0
+        for inputs, labels in train_dataloader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             
@@ -132,22 +142,41 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
             loss.backward()
             optimizer.step()
             
-            total_loss += loss.item()
+            total_train_loss += loss.item()
             _, predicted = torch.max(outputs, 1)
-            correct_preds += (predicted == labels).sum().item()
-            total_samples += labels.size(0)
+            train_correct_preds += (predicted == labels).sum().item()
+            train_total_samples += labels.size(0)
 
-        avg_loss = total_loss / len(gating_dataloader)
-        accuracy = correct_preds / total_samples
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}")
-    
-    # --- 5. Save Gating Network ---
-    output_dir = os.path.dirname(output_path)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
+        avg_train_loss = total_train_loss / len(train_dataloader)
+        train_accuracy = train_correct_preds / train_total_samples
+
+        # --- Validation Phase ---
+        gating_network.eval()
+        total_val_loss = 0
+        with torch.no_grad():
+            for inputs, labels in val_dataloader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                current_base_probs = inputs[:, :num_total_classes]
+                current_expert_probs_full = inputs[:, num_total_classes:]
+                
+                outputs = gating_network(current_base_probs, current_expert_probs_full)
+                loss = criterion(outputs, labels)
+                total_val_loss += loss.item()
         
-    torch.save(gating_network.state_dict(), output_path)
-    print(f"Gating Network training complete. Model saved to {output_path}")
+        avg_val_loss = total_val_loss / len(val_dataloader)
+
+        print(f"Epoch {epoch+1}/{epochs} -> Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.4f} | Val Loss: {avg_val_loss:.4f}")
+
+        # --- Checkpointing ---
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            torch.save(gating_network.state_dict(), output_path)
+            print(f"  -> New best model saved to {output_path} (Val Loss: {best_val_loss:.4f})")
+
+    print(f"\n Gating Network training complete. Best model (Val Loss: {best_val_loss:.4f}) is saved at {output_path}")
 
 if __name__ == "__main__":
     train_gating_network()
