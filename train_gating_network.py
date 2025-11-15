@@ -110,7 +110,7 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
 
     # --- 5. Train Gating Network ---
     # Calculate class weights using only the training set labels
-    train_labels = torch.cat([labels for _, labels in train_dataloader])
+    train_labels = train_dataset.dataset.tensors[1][train_dataset.indices]
     class_counts_full = torch.bincount(train_labels, minlength=num_total_classes)
     
     class_weights = len(train_labels) / (num_total_classes * (class_counts_full.float() + 1e-6))
