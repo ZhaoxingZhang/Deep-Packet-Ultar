@@ -148,3 +148,23 @@ python train_gating_network.py \
 --lambda_macro 0.3
 
 ssh featurize@workspace.featurize.cn -p 47690
+
+python train_gating_network.py \
+--train_data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet \
+--baseline_model_path model/resnet_vpn_featurize.model.ckpt \
+--minority_model_path model/minority_expert_resnet.pth.ckpt \
+--minority_classes 5 \
+--minority_classes 7 \
+--output_path model/gating_network_cross_entropy_loss.pth \
+--epochs 10 \
+--lr 0.001
+
+python train_gating_network.py \
+--train_data_path train_test_data/from_featurize_vpn/traffic_classification/train.parquet \
+--baseline_model_path model/model/resnet_vpn_featurize.model.ckpt \
+--minority_model_path model/model/minority_expert_resnet.pth.ckpt \
+--minority_classes 5 \
+--minority_classes 7 \
+--output_path model/gating_network_cross_entropy_loss.pth \
+--epochs 10 \
+--lr 0.001

@@ -6,14 +6,12 @@ import torch
 import pyarrow.parquet as pq
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
-from ruamel.yaml import YAML
 
 # Make sure the ml module is in the python path
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from ml.model import ResNet, GatingNetwork
-from ml.losses import CombinedMacroF1CELoss, AdaptiveMacroF1CELoss
 
 def load_feature_data(data_path):
     """Loads the raw feature data (for the main models)."""
@@ -39,30 +37,25 @@ def load_feature_data(data_path):
 @click.option("--output_path", required=True, help="Path to save the trained Gating Network.")
 @click.option("--epochs", type=int, default=10, help="Number of epochs to train the Gating Network.")
 @click.option("--lr", type=float, default=0.001, help="Learning rate for the Gating Network.")
-@click.option("--lambda_macro", type=float, default=0.5, help="Weight for Macro-F1 loss (0-1).")
-@click.option("--use_adaptive", is_flag=True, default=False, help="Use adaptive Macro-F1 weighting.")
-@click.option("--initial_lambda", type=float, default=0.1, help="Initial lambda for adaptive training.")
-@click.option("--final_lambda", type=float, default=0.7, help="Final lambda for adaptive training.")
-def train_gating_network(train_data_path, baseline_model_path, minority_model_path, minority_classes, output_path, epochs, lr, lambda_macro, use_adaptive, initial_lambda, final_lambda):
+def train_gating_network(train_data_path, baseline_model_path, minority_model_path, minority_classes, output_path, epochs, lr):
     """
-    Trains a Gating Network to combine the outputs of a baseline and a minority expert model.
+    Trains a Gating Network to combine the outputs of a baseline and a minority expert model
+    using a Weighted Cross-Entropy Loss to handle class imbalance.
     """
-    print("--- Starting Gating Network Training with Macro-F1 Optimization ---")
-
-    # Validate lambda_macro
-    if not 0 <= lambda_macro <= 1:
-        print("Error: lambda_macro must be between 0 and 1")
-        return
+    print("--- Starting Gating Network Training (Weighted Cross-Entropy) ---")
     
     # --- 1. Load Models (Frozen) ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     print(f"Loading baseline model from {baseline_model_path}...")
-    baseline_model = ResNet.load_from_checkpoint(baseline_model_path)
+    baseline_model = ResNet.load_from_checkpoint(baseline_model_path).to(device)
     baseline_model.eval()
     for param in baseline_model.parameters():
         param.requires_grad = False
 
     print(f"Loading minority expert model from {minority_model_path}...")
-    minority_model = ResNet.load_from_checkpoint(minority_model_path)
+    minority_model = ResNet.load_from_checkpoint(minority_model_path).to(device)
     minority_model.eval()
     for param in minority_model.parameters():
         param.requires_grad = False
@@ -81,6 +74,7 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     print("Generating Gating Network training data by processing with base models...")
     with torch.no_grad():
         for features, labels in feature_dataloader:
+            features = features.to(device)
             # Get probabilities from baseline model
             base_outputs = baseline_model(features)
             base_probs = torch.nn.functional.softmax(base_outputs, dim=1)
@@ -111,21 +105,15 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     class_counts_full = torch.bincount(gating_train_labels, minlength=num_total_classes)
     
     # Using the sklearn formula: n_samples / (n_classes * np.bincount(y))
-    # Convert to float to avoid integer division
-    # Handle potential Inf if a class has 0 samples: set weight to 0 for such classes
-    class_weights = len(gating_train_labels) / (num_total_classes * class_counts_full.float())
-    class_weights[class_counts_full == 0] = 0.0 # Set weight to 0 for classes not present
-
-    # Move weights to the same device as the model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Add a small epsilon to avoid division by zero
+    class_weights = len(gating_train_labels) / (num_total_classes * (class_counts_full.float() + 1e-6))
     class_weights = class_weights.to(device)
+    print(f"Calculated class weights: {class_weights}")
 
-    gating_network = GatingNetwork(num_total_classes)
-    gating_network.to(device) # Move model to device
+    gating_network = GatingNetwork(num_total_classes).to(device)
     optimizer = torch.optim.Adam(gating_network.parameters(), lr=lr)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
-    print(f"Calculated class weights: {class_weights}")
     print(f"Training Gating Network for {epochs} epochs...")
     for epoch in range(epochs):
         gating_network.train()
@@ -133,10 +121,9 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
         correct_preds = 0
         total_samples = 0
         for inputs, labels in gating_dataloader:
-            inputs, labels = inputs.to(device), labels.to(device) # Move data to device
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             
-            # Split concatenated inputs back into two probability vectors
             current_base_probs = inputs[:, :num_total_classes]
             current_expert_probs_full = inputs[:, num_total_classes:]
 
