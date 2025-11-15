@@ -154,7 +154,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
 
         print(f"Loading pre-trained Gating Network from {gating_network_path}...")
         gating_network = GatingNetwork(num_total_classes)
-        gating_network.load_state_dict(torch.load(gating_network_path))
+        checkpoint = torch.load(gating_network_path)
+        gating_network.load_state_dict(checkpoint['model_state_dict'])
         gating_network.eval()
 
         # --- Create Mappings and Evaluate ---
