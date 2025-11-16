@@ -38,6 +38,12 @@ import shutil
 # - `exp_open_set_majority` / `exp_open_set_minority` / `exp_incremental_new`:
 #   - What it does: Similar to `exp8`, these filter the dataset for specific, hard-coded lists of classes for various open-set and incremental learning experiments.
 #   - Use case: Highly specific experimental setups.
+#
+# - `open_set_hold_out`:
+#   - What it does: Prepares data for true open-set recognition evaluation.
+#   - Key feature: Excludes specified classes from the training set, remaps remaining known classes to be contiguous (0, 1, ...),
+#     and keeps the test set with all original classes.
+#   - Use case: Rigorous evaluation of a model's ability to detect truly unseen classes.
 
 import click
 import psutil
@@ -130,6 +136,7 @@ def create_train_test_for_task(
     unknown_train_ratio,
     experiment_type,
     minority_classes,
+    exclude_classes,
 ):
     if experiment_type == "exp1":
         task_df = df.filter(col(label_col).isNotNull()).selectExpr(
@@ -367,6 +374,38 @@ def create_train_test_for_task(
         save_train(train_df, data_dir_path)
         save_test(test_df, data_dir_path)
         print("--------------------------------------------------------")
+    elif experiment_type == "open_set_hold_out":
+        if not exclude_classes:
+            raise ValueError("The --exclude-classes argument is required for experiment_type 'open_set_hold_out'")
+        
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+        
+        # Split the full dataset into train_full and test_df. test_df contains all classes.
+        train_df_full, test_df = split_train_test(task_df, test_size, under_sampling_train=True) # Keep under_sampling_train=True to match exp2 behavior
+        
+        # Filter out excluded classes from the training set
+        train_df_filtered = train_df_full.filter(~col('label').isin(list(exclude_classes)))
+        
+        # Remap labels for the training set to be contiguous from 0
+        known_labels_in_train = sorted([row.label for row in train_df_filtered.select("label").distinct().collect()])
+        label_mapping = {original_label: i for i, original_label in enumerate(known_labels_in_train)}
+        
+        from pyspark.sql.functions import create_map
+        from itertools import chain
+        mapping_expr = create_map([lit(x) for x in chain(*label_mapping.items())])
+        
+        train_df_remapped = train_df_filtered.withColumn("label", mapping_expr[col("label")])
+        
+        print("--- Creating dataset for Open-Set Hold-Out experiment ---")
+        print(f"Excluded classes from training: {exclude_classes}")
+        print(f"Known classes in training (original labels): {known_labels_in_train}")
+        print(f"Known classes in training (remapped labels): {list(label_mapping.values())}")
+        print("Test set contains all original classes.")
+        save_train(train_df_remapped, data_dir_path)
+        save_test(test_df, data_dir_path)
+        print("-------------------------------------------------------")
 
 
 def print_df_label_distribution(spark, path):
@@ -404,7 +443,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_incremental_new", "imbalanced"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_incremental_new", "imbalanced", "open_set_hold_out"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )
@@ -426,7 +465,19 @@ def print_df_label_distribution(spark, path):
     multiple=True,
     help="List of class labels to be treated as minority classes for exp8_minority."
 )
-def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment_type, fraction, batch_size, minority_classes):
+@click.option(
+    "--exclude-classes",
+    type=int,
+    multiple=True,
+    help="List of class labels to be excluded from the training set for 'open_set_hold_out' experiment type."
+)
+@click.option(
+    "--task-type",
+    type=click.Choice(['application', 'traffic', 'all'], case_sensitive=False),
+    default='all',
+    help="Specify which classification task to generate data for."
+)
+def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment_type, fraction, batch_size, minority_classes, exclude_classes, task_type):
     source_data_dir_path = Path(source)
     target_data_dir_path = Path(target)
 
@@ -458,7 +509,10 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
         print(f"Starting fractional sampling with fraction: {fraction}, batch size: {batch_size}")
         all_files = [p.absolute().as_uri() for p in source_data_dir_path.glob("*.json.gz")]
         if not all_files:
-            raise ValueError(f"No .json.gz files found in source directory: {source}")
+            # Try recursive glob
+            all_files = [p.absolute().as_uri() for p in source_data_dir_path.glob("**/*.json.gz")]
+            if not all_files:
+                raise ValueError(f"No .json.gz files found in source directory: {source}")
 
         temp_dir = target_data_dir_path / "temp_sampled_data"
         if temp_dir.exists():
@@ -496,42 +550,48 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
         print("Loading all files from source for non-fractional experiment...")
         # Use a recursive glob pattern to find all part files.
         df = spark.read.schema(schema).json(
-            f"{source_data_dir_path.absolute().as_uri()}/*.json.gz"
+            f"{source_data_dir_path.absolute().as_uri()}/**/*.json.gz"
         )
 
     # prepare data for application classification and traffic classification
-    print("processing application classification dataset")
-    create_train_test_for_task(
-        df=df,
-        label_col="app_label",
-        test_size=test_size,
-        data_dir_path=application_data_dir_path,
-        known_ratio=known_ratio,
-        unknown_train_ratio=unknown_train_ratio,
-        experiment_type=experiment_type,
-        minority_classes=minority_classes,
-    )
+    if task_type == 'all' or task_type == 'application':
+        print("processing application classification dataset")
+        create_train_test_for_task(
+            df=df,
+            label_col="app_label",
+            test_size=test_size,
+            data_dir_path=application_data_dir_path,
+            known_ratio=known_ratio,
+            unknown_train_ratio=unknown_train_ratio,
+            experiment_type=experiment_type,
+            minority_classes=minority_classes,
+            exclude_classes=exclude_classes,
+        )
 
-    print("processing traffic classification dataset")
-    create_train_test_for_task(
-        df=df,
-        label_col="traffic_label",
-        test_size=test_size,
-        data_dir_path=traffic_data_dir_path,
-        known_ratio=known_ratio,
-        unknown_train_ratio=unknown_train_ratio,
-        experiment_type=experiment_type,
-        minority_classes=minority_classes,
-    )
+    if task_type == 'all' or task_type == 'traffic':
+        print("processing traffic classification dataset")
+        create_train_test_for_task(
+            df=df,
+            label_col="traffic_label",
+            test_size=test_size,
+            data_dir_path=traffic_data_dir_path,
+            known_ratio=known_ratio,
+            unknown_train_ratio=unknown_train_ratio,
+            experiment_type=experiment_type,
+            minority_classes=minority_classes,
+            exclude_classes=exclude_classes,
+        )
 
     # stats
-    print("Final label distribution for application classification:")
-    print_df_label_distribution(spark, application_data_dir_path / "train.parquet")
-    print_df_label_distribution(spark, application_data_dir_path / "test.parquet")
+    if task_type == 'all' or task_type == 'application':
+        print("Final label distribution for application classification:")
+        print_df_label_distribution(spark, application_data_dir_path / "train.parquet")
+        print_df_label_distribution(spark, application_data_dir_path / "test.parquet")
     
-    print("Final label distribution for traffic classification:")
-    print_df_label_distribution(spark, traffic_data_dir_path / "train.parquet")
-    print_df_label_distribution(spark, traffic_data_dir_path / "test.parquet")
+    if task_type == 'all' or task_type == 'traffic':
+        print("Final label distribution for traffic classification:")
+        print_df_label_distribution(spark, traffic_data_dir_path / "train.parquet")
+        print_df_label_distribution(spark, traffic_data_dir_path / "test.parquet")
 
 
 if __name__ == "__main__":

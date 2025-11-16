@@ -56,6 +56,12 @@ nohup python create_train_test_set.py \
 watch -n 1 tail -n 50 log/from_featurize_vpn.txt
 python train_resnet.py -d /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet -m model/resnet_vpn_featurize.model -t app
 
+# 训练基准模型
+python train_resnet.py \
+--data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet \
+--model_path model/resnet_vpn_featurize.model \
+--task traffic
+
 # 创建少数类训练集
 python create_train_test_set.py \
 --source processed_data/vpn \
@@ -150,15 +156,15 @@ python train_gating_network.py \
 ssh featurize@workspace.featurize.cn -p 47690
 
 # 远端训练门控网络
-python train_gating_network.py \
+nohup python -u train_gating_network.py \
 --train_data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/train.parquet \
 --baseline_model_path model/resnet_vpn_featurize.model.ckpt \
 --minority_model_path model/minority_expert_resnet.pth.ckpt \
 --minority_classes 5 \
 --minority_classes 7 \
---output_path model/gating_network_cross_entropy_loss.pth \
---epochs 150 \
---lr 0.00005
+--output_path model/gating_network_cross_entropy_loss_1115.pth \
+--epochs 600 \
+--lr 0.00002 > log/train_gating_network_1115.txt &
 
 # 本地验证门控网络
 python train_gating_network.py \
@@ -170,3 +176,14 @@ python train_gating_network.py \
 --output_path model/gating_network_cross_entropy_loss.pth \
 --epochs 10 \
 --lr 0.001
+
+# 远端验证门控网络
+python evaluation.py \
+--data_path /home/featurize/data/train_test_data/from_featurize_vpn/traffic_classification/test.parquet \
+--output_dir evaluation_results/ensemble_traffic_minority \
+--eval-mode gating_ensemble \
+--baseline_model_path model/resnet_vpn_featurize.model.ckpt \
+--minority_model_path model/minority_expert_resnet.pth.ckpt \
+--minority_classes 5 \
+--minority_classes 7 \
+--gating_network_path model/gating_network_cross_entropy_loss_1115.pth
