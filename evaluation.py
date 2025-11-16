@@ -154,9 +154,24 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
 
         print(f"Loading pre-trained Gating Network from {gating_network_path}...")
         gating_network = GatingNetwork(num_total_classes)
-        checkpoint = torch.load(gating_network_path)
-        gating_network.load_state_dict(checkpoint['model_state_dict'])
+        
+        try:
+            checkpoint = torch.load(gating_network_path, map_location=device) # Load to current device
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                gating_network.load_state_dict(checkpoint['model_state_dict'])
+                print("  -> Loaded Gating Network from comprehensive checkpoint format.")
+            else:
+                # Assume it's the old format (just state_dict)
+                gating_network.load_state_dict(checkpoint)
+                print("  -> Loaded Gating Network from old state_dict format.")
+        except Exception as e:
+            print(f"  -> Failed to load as comprehensive checkpoint or dict: {e}. Attempting to load as raw state_dict.")
+            # Fallback to direct state_dict load in case of unexpected file content
+            gating_network.load_state_dict(torch.load(gating_network_path, map_location=device))
+            print("  -> Loaded Gating Network from raw state_dict format.")
+            
         gating_network.eval()
+        gating_network.to(device) # Ensure model is on the correct device
 
         # --- Create Mappings and Evaluate ---
         expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
