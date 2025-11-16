@@ -47,8 +47,13 @@ def main(data_path, model_path, task, validation_split, sampling_strategy):
 
         train_application_classification_resnet_model(data_path, model_path, output_dim=output_dim, validation_split=validation_split, sampling_strategy=sampling_strategy)
     elif task == "traffic":
-        # Assuming similar logic for traffic classification if needed in the future
-        train_traffic_classification_resnet_model(data_path, model_path, validation_split=validation_split)
+        # Dynamically determine output_dim from the training data
+        # The data_path is expected to be the path to the train.parquet directory.
+        table = pq.read_table(data_path)
+        output_dim = table['label'].to_pandas().max() + 1
+        print(f"Dynamically determined output_dim for traffic task: {output_dim}")
+
+        train_traffic_classification_resnet_model(data_path, model_path, validation_split=validation_split, output_dim=output_dim)
     else:
         exit("Not Support")
 

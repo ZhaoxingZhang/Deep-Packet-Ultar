@@ -184,7 +184,7 @@ def train_traffic_classification_cnn_model(data_path, model_path):
     )
 
 
-def train_traffic_classification_resnet_model(data_path, model_path):
+def train_traffic_classification_resnet_model(data_path, model_path, validation_split=0.1, output_dim=12):
     logger = TensorBoardLogger(
         "traffic_classification_resnet_logs", "traffic_classification_resnet"
     )
@@ -194,12 +194,13 @@ def train_traffic_classification_resnet_model(data_path, model_path):
         c1_stride=3,
         c1_groups=1,
         c1_n_block=4,
-        output_dim=12,
+        output_dim=output_dim,
         data_path=data_path,
         epoch=40,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
+        validation_split=validation_split,
     )
 
 

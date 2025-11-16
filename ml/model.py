@@ -639,7 +639,11 @@ class ResNet(LightningModule):
         from torch.utils.data import TensorDataset, random_split
         from collections import Counter
 
-        train_path = os.path.join(self.hparams.data_path, 'train.parquet')
+        train_path = self.hparams.data_path
+        # User's suggested fix: if data_path already ends with 'train.parquet', use it directly; otherwise, append it.
+        if not train_path.endswith('train.parquet'):
+            train_path = os.path.join(train_path, 'train.parquet')
+            
         table = pq.read_table(train_path)
         df = table.to_pandas()
         

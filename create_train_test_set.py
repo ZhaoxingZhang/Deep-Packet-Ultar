@@ -383,7 +383,7 @@ def create_train_test_for_task(
         )
         
         # Split the full dataset into train_full and test_df. test_df contains all classes.
-        train_df_full, test_df = split_train_test(task_df, test_size, under_sampling_train=True) # Keep under_sampling_train=True to match exp2 behavior
+        train_df_full, test_df = split_train_test(task_df, test_size, under_sampling_train=False) # Changed to False as per user's request
         
         # Filter out excluded classes from the training set
         train_df_filtered = train_df_full.filter(~col('label').isin(list(exclude_classes)))
