@@ -18,8 +18,8 @@ do
 
   # --- Step 1: Generate Dataset ---
   echo "--> Step 1: Generating dataset, excluding class ${CLASS} from training set..."
-  conda run -n deep_packet python create_train_test_set.py \
-    -s /Users/weisman/Documents/repo_root/graduate/Deep-Packet-Ultar/processed_data/vpn \
+  python create_train_test_set.py \
+    -s processed_data/vpn \
     -t "${TARGET_DIR}" \
     --experiment_type open_set_hold_out \
     --task-type traffic \
@@ -29,7 +29,7 @@ do
 
   # --- Step 2: Train Baseline Model ---
   echo "--> Step 2: Training baseline model on the new dataset..."
-  conda run -n deep_packet python train_resnet.py \
+  python train_resnet.py \
     --data_path "${DATA_PATH}" \
     --model_path "${MODEL_PATH}" \
     --task traffic
