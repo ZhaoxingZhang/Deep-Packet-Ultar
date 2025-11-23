@@ -19,7 +19,7 @@ do
   echo "================================================================="
 
   # Define paths for this fold
-  MODEL_PATH="model/open_set_hold_out/baseline_exclude_${EXCLUDED_CLASS}.pt"
+  MODEL_PATH="model/open_set_hold_out/baseline_exclude_${EXCLUDED_CLASS}.pt.ckpt"
   DATA_PATH="train_test_data/open_set_hold_out/exp_exclude_${EXCLUDED_CLASS}/traffic_classification/test.parquet"
   OUTPUT_DIR="evaluation_results/open_set_hold_out/baseline_exclude_${EXCLUDED_CLASS}"
   
