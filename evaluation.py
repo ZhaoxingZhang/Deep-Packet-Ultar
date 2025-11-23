@@ -147,7 +147,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         print(f"--- Running in GATING ENSEMBLE mode ---\n")
 
         print(f"Loading baseline model from {baseline_model_path}...")
-        baseline_model = ResNet.load_from_checkpoint(baseline_model_path, map_location=device)
+        baseline_model = ResNet.load_from_checkpoint(model_path, map_location=device)
         baseline_model.to(device)
         baseline_model.eval()
 
@@ -200,13 +200,28 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                 all_labels.extend(labels.cpu().numpy())
                 all_probs.extend(final_probs.cpu().numpy())
 
+    # --- Remap predictions if a label map is provided ---
+    if label_map:
+        print(f"\nApplying label map: {label_map}")
+        label_mapping = {int(k): int(v) for k, v in (item.split(':') for item in label_map.split(','))}
+        
+        # Use .get(p, -1) to map unknown predictions to a default value like -1
+        # This prevents errors if a prediction is not in the map, and helps in debugging.
+        remapped_preds = [label_mapping.get(p, -1) for p in all_preds]
+        preds_to_evaluate = remapped_preds
+        print(f"Original preds (first 10): {all_preds[:10]}")
+        print(f"Remapped preds (first 10): {preds_to_evaluate[:10]}")
+    else:
+        preds_to_evaluate = all_preds
+
     # --- Common evaluation logic ---
     print("\nCalculating metrics...")
-    accuracy = accuracy_score(all_labels, all_preds)
-    # Get unique labels from all_labels to pass to classification_report
+    accuracy = accuracy_score(all_labels, preds_to_evaluate)
+    
+    # Ensure all actual labels are included in the report, even if not predicted
     unique_labels = np.unique(all_labels)
-    report = classification_report(all_labels, all_preds, labels=unique_labels, zero_division=0)
-    cm = confusion_matrix(all_labels, all_preds, labels=unique_labels)
+    report = classification_report(all_labels, preds_to_evaluate, labels=unique_labels, zero_division=0)
+    cm = confusion_matrix(all_labels, preds_to_evaluate, labels=unique_labels)
 
     print("--- Evaluation Results ---")
     print(f"Accuracy: {accuracy:.4f}\n")
@@ -230,8 +245,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
 
     # --- Open-Set Evaluation Logic ---
     if open_set_eval:
-        if not known_classes or not unknown_classes:
-            raise ValueError("--known-classes and --unknown-classes are required for open-set evaluation.")
+        if not known_classes:
+            raise ValueError("--known-classes is required for open-set evaluation.")
         
         print("\n--- Open-Set Evaluation Results ---")
         
@@ -263,7 +278,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         with open(results_file, 'a') as f:
             f.write("\n\n--- Open-Set Evaluation ---\n")
             f.write(f"Known Classes: {known_classes}\n")
-            f.write(f"Unknown Classes: {unknown_classes}\n")
+            if unknown_classes:
+                f.write(f"Unknown Classes: {unknown_classes}\n")
             f.write(f"AUROC: {auroc:.4f}\n")
             f.write(f"FPR@TPR95: {fpr_at_tpr95:.4f}\n")
 
