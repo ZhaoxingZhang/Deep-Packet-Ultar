@@ -548,10 +548,23 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
     else:
         # Original logic for other experiments that load the entire dataset
         print("Loading all files from source for non-fractional experiment...")
-        # Use a recursive glob pattern to find all part files.
-        df = spark.read.schema(schema).json(
-            f"{source_data_dir_path.absolute().as_uri()}/**/*.json.gz"
-        )
+        
+        # PySpark's globbing can be sensitive. We check for file existence with Python's glob
+        # before passing the path to Spark to provide a fallback and clearer error messages.
+        recursive_files = list(source_data_dir_path.glob("**/*.json.gz"))
+        flat_files = list(source_data_dir_path.glob("*.json.gz"))
+
+        if recursive_files:
+            path_to_load = f"{source_data_dir_path.absolute().as_uri()}/**/*.json.gz"
+            print(f"Found files using recursive pattern. Loading from: {path_to_load}")
+            df = spark.read.schema(schema).json(path_to_load)
+        elif flat_files:
+            path_to_load = f"{source_data_dir_path.absolute().as_uri()}/*.json.gz"
+            print(f"Found files using flat pattern. Loading from: {path_to_load}")
+            df = spark.read.schema(schema).json(path_to_load)
+        else:
+            # Raise a clear error if no files are found with either pattern.
+            raise ValueError(f"Path does not exist or no .json.gz files found in source directory: {source_data_dir_path}")
 
     # prepare data for application classification and traffic classification
     if task_type == 'all' or task_type == 'application':
