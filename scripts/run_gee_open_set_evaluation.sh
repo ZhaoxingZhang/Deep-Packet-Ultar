@@ -79,7 +79,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
 
     # a) Main dataset for baseline expert and gating network training
     echo "    - Generating main dataset..."
-    python create_train_test_set.py \
+    python -u create_train_test_set.py \
         --source "${SOURCE_DATA_DIR}" \
         --target "${FOLD_DATA_DIR}/main" \
         --experiment_type open_set_hold_out \
@@ -88,7 +88,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
 
     # b) Minority expert dataset
     echo "    - Generating minority expert dataset..."
-    python create_train_test_set.py \
+    python -u create_train_test_set.py \
         --source "${SOURCE_DATA_DIR}" \
         --target "${FOLD_DATA_DIR}/minority" \
         --experiment_type open_set_hold_out \
@@ -101,21 +101,21 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
 
     # a) Train Baseline (Majority) Expert
     echo "    - Training baseline expert..."
-    python train_resnet.py \
+    python -u train_resnet.py \
         --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
         --save_path "${BASELINE_MODEL_PATH}" \
         --output_dim ${#KNOWN_CLASSES[@]}
 
     # b) Train Minority Expert
     echo "    - Training minority expert..."
-    python train_resnet.py \
+    python -u train_resnet.py \
         --data_path "${FOLD_DATA_DIR}/minority/traffic_classification" \
         --save_path "${MINORITY_EXPERT_PATH}" \
         --output_dim ${#MINORITY_CLASSES_FOLD[@]}
 
     # c) Train Gating Network
     echo "    - Training gating network..."
-    python train_gating_network.py \
+    python -u train_gating_network.py \
         --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
         --baseline_model_path "${BASELINE_MODEL_PATH}" \
         --expert_model_path "${MINORITY_EXPERT_PATH}" \
@@ -125,7 +125,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
 
     # --- 3. Evaluation ---
     echo "--> Step 3: Evaluating GEE model for Fold ${EXCLUDED_CLASS}..."
-    python evaluation.py \
+    python -u evaluation.py \
         --data_path "${FOLD_DATA_DIR}/main/traffic_classification/test.parquet" \
         --model_path "${BASELINE_MODEL_PATH}" \
         --gating_network_path "${GATING_NETWORK_PATH}" \
