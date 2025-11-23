@@ -58,11 +58,12 @@ def get_output_dir_from_model_path(model_path):
 @click.option("--open-set-eval", is_flag=True, help="Enable open-set recognition evaluation.")
 @click.option("--known-classes", type=int, multiple=True, help="Labels of the known classes for open-set evaluation.")
 @click.option("--unknown-classes", type=int, multiple=True, help="Labels of the unknown classes for open-set evaluation.")
+@click.option("--label-map", help="Comma-separated label mapping for open-set evaluation, e.g., '0:6,1:7'.")
 def evaluate(data_path, output_dir, eval_mode, model_path, model_type, 
              baseline_model_path, minority_model_path, minority_classes, 
              baseline_weight, minority_weight,
              gating_network_path,
-             open_set_eval, known_classes, unknown_classes):
+             open_set_eval, known_classes, unknown_classes, label_map):
     """Evaluates a trained model or an ensemble of models on the given test set."""
     
     os.makedirs(output_dir, exist_ok=True)

@@ -30,11 +30,22 @@ do
     exit 1
   fi
 
-  # Determine the known classes arguments for this fold
+  # Determine the known classes and construct the label map for this fold
   KNOWN_CLASSES_ARGS=""
+  LABEL_MAP_STRING=""
+  NEW_LABEL_IDX=0
   for C in $ALL_CLASSES; do
     if [ "$C" != "$EXCLUDED_CLASS" ]; then
+      # Build args for --known-classes
       KNOWN_CLASSES_ARGS="$KNOWN_CLASSES_ARGS --known-classes $C"
+      
+      # Build the comma-separated string for --label-map
+      if [ -z "$LABEL_MAP_STRING" ]; then
+        LABEL_MAP_STRING="${NEW_LABEL_IDX}:${C}"
+      else
+        LABEL_MAP_STRING="${LABEL_MAP_STRING},${NEW_LABEL_IDX}:${C}"
+      fi
+      NEW_LABEL_IDX=$((NEW_LABEL_IDX + 1))
     fi
   done
 
@@ -48,7 +59,8 @@ do
     --eval-mode standard \
     --open-set-eval \
     --unknown-classes "${EXCLUDED_CLASS}" \
-    ${KNOWN_CLASSES_ARGS} # Pass the generated arguments string
+    --label-map "${LABEL_MAP_STRING}" \
+    ${KNOWN_CLASSES_ARGS}
 
   # --- Extract results ---
   RESULT_FILE="${OUTPUT_DIR}/evaluation_summary.txt"
