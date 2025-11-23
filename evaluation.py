@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve
 import seaborn as sns
 import matplotlib.pyplot as plt
 from ruamel.yaml import YAML
@@ -54,19 +54,26 @@ def get_output_dir_from_model_path(model_path):
 @click.option("--minority_weight", type=float, default=0.5, help="Weight for the minority expert model.")
 # Options for 'gating_ensemble' mode
 @click.option("--gating_network_path", help="Path to the pre-trained Gating Network.")
+# Options for open-set evaluation
+@click.option("--open-set-eval", is_flag=True, help="Enable open-set recognition evaluation.")
+@click.option("--known-classes", type=int, multiple=True, help="Labels of the known classes for open-set evaluation.")
+@click.option("--unknown-classes", type=int, multiple=True, help="Labels of the unknown classes for open-set evaluation.")
 def evaluate(data_path, output_dir, eval_mode, model_path, model_type, 
              baseline_model_path, minority_model_path, minority_classes, 
              baseline_weight, minority_weight,
-             gating_network_path):
+             gating_network_path,
+             open_set_eval, known_classes, unknown_classes):
     """Evaluates a trained model or an ensemble of models on the given test set."""
     
     os.makedirs(output_dir, exist_ok=True)
     
     all_preds = []
     all_labels = []
+    all_probs = []
 
     print(f"Loading data from {data_path}...")
     test_dataloader = load_data(data_path)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if eval_mode == 'standard':
         if not model_path or not model_type:
@@ -75,17 +82,22 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         print(f"--- Running in STANDARD mode ---")
         print(f"Loading {model_type} model from {model_path}...")
         if model_type == 'resnet':
-            model = ResNet.load_from_checkpoint(model_path)
+            # Add map_location to handle models trained on GPU when evaluating on CPU
+            model = ResNet.load_from_checkpoint(model_path, map_location=device)
         else:
             raise ValueError(f"Unknown model type for standard evaluation: {model_type}")
         
+        model.to(device)
         model.eval()
         with torch.no_grad():
             for features, labels in test_dataloader:
+                features = features.to(device)
                 outputs = model(features)
-                _, predicted = torch.max(outputs, 1)
+                final_probs = torch.nn.functional.softmax(outputs, dim=1)
+                _, predicted = torch.max(final_probs, 1)
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
+                all_probs.extend(final_probs.cpu().numpy())
 
     elif eval_mode == 'ensemble':
         if not baseline_model_path or not minority_model_path or not minority_classes:
@@ -93,46 +105,39 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         
         print(f"--- Running in ENSEMBLE mode ---")
         print(f"Loading baseline model from {baseline_model_path}...")
-        baseline_model = ResNet.load_from_checkpoint(baseline_model_path)
+        baseline_model = ResNet.load_from_checkpoint(baseline_model_path, map_location=device)
+        baseline_model.to(device)
         baseline_model.eval()
 
         print(f"Loading minority expert model from {minority_model_path}...")
-        minority_model = ResNet.load_from_checkpoint(minority_model_path)
+        minority_model = ResNet.load_from_checkpoint(minority_model_path, map_location=device)
+        minority_model.to(device)
         minority_model.eval()
 
-        # Create the mapping from the expert's output index (0, 1, ...) to the original class label
         expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
         print(f"Minority expert mapping: {expert_idx_to_original_label}\n")
 
         with torch.no_grad():
             for features, labels in test_dataloader:
-                # 1. Get probabilities from baseline model
+                features = features.to(device)
                 base_outputs = baseline_model(features)
                 base_probs = torch.nn.functional.softmax(base_outputs, dim=1)
 
-                # 2. Get probabilities from minority expert
                 expert_outputs = minority_model(features)
                 expert_probs_small = torch.nn.functional.softmax(expert_outputs, dim=1)
 
-                # 3. Align expert probabilities to the full class space
                 num_total_classes = base_probs.shape[1]
                 expert_probs_full = torch.zeros_like(base_probs)
                 for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
-                    # Ensure expert_local_idx is within the bounds of expert_probs_small
                     if expert_local_idx < expert_probs_small.shape[1]:
                         expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
-                    else:
-                        # This case should ideally not happen if the model was trained correctly,
-                        # but we handle it for robustness as per user's request.
-                        print(f"Warning: Minority expert output dimension ({expert_probs_small.shape[1]}) is smaller than expected for local index {expert_local_idx}. Skipping.")
 
-                # 4. Combine probabilities with weights
                 final_probs = (baseline_weight * base_probs) + (minority_weight * expert_probs_full)
                 
-                # 5. Get final prediction
                 _, predicted = torch.max(final_probs, 1)
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
+                all_probs.extend(final_probs.cpu().numpy())
 
     elif eval_mode == 'gating_ensemble':
         if not baseline_model_path or not minority_model_path or not minority_classes or not gating_network_path:
@@ -140,73 +145,67 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         
         print(f"--- Running in GATING ENSEMBLE mode ---\n")
 
-        # --- Load Models ---
         print(f"Loading baseline model from {baseline_model_path}...")
-        baseline_model = ResNet.load_from_checkpoint(baseline_model_path)
+        baseline_model = ResNet.load_from_checkpoint(baseline_model_path, map_location=device)
+        baseline_model.to(device)
         baseline_model.eval()
 
         print(f"Loading minority expert model from {minority_model_path}...")
-        minority_model = ResNet.load_from_checkpoint(minority_model_path)
+        minority_model = ResNet.load_from_checkpoint(minority_model_path, map_location=device)
+        minority_model.to(device)
         minority_model.eval()
 
-        num_total_classes = baseline_model.out.out_features
+        # Dynamically determine num_total_classes from the baseline model
+        num_total_classes = baseline_model.hparams.output_dim
         print(f"Detected {num_total_classes} total classes.")
 
         print(f"Loading pre-trained Gating Network from {gating_network_path}...")
         gating_network = GatingNetwork(num_total_classes)
         
         try:
-            checkpoint = torch.load(gating_network_path, map_location=device) # Load to current device
+            checkpoint = torch.load(gating_network_path, map_location=device)
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 gating_network.load_state_dict(checkpoint['model_state_dict'])
-                print("  -> Loaded Gating Network from comprehensive checkpoint format.")
             else:
-                # Assume it's the old format (just state_dict)
                 gating_network.load_state_dict(checkpoint)
-                print("  -> Loaded Gating Network from old state_dict format.")
         except Exception as e:
-            print(f"  -> Failed to load as comprehensive checkpoint or dict: {e}. Attempting to load as raw state_dict.")
-            # Fallback to direct state_dict load in case of unexpected file content
+            print(f"  -> Failed to load checkpoint directly: {e}. Assuming it's a raw state_dict.")
             gating_network.load_state_dict(torch.load(gating_network_path, map_location=device))
-            print("  -> Loaded Gating Network from raw state_dict format.")
             
+        gating_network.to(device)
         gating_network.eval()
-        gating_network.to(device) # Ensure model is on the correct device
 
-        # --- Create Mappings and Evaluate ---
         expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
         print(f"Minority expert mapping: {expert_idx_to_original_label}\n")
 
         with torch.no_grad():
             for features, labels in test_dataloader:
-                # 1. Get probabilities from baseline model
+                features = features.to(device)
                 base_outputs = baseline_model(features)
                 base_probs = torch.nn.functional.softmax(base_outputs, dim=1)
 
-                # 2. Get probabilities from minority expert
                 expert_outputs = minority_model(features)
                 expert_probs_small = torch.nn.functional.softmax(expert_outputs, dim=1)
 
-                # 3. Align expert probabilities to the full class space
                 expert_probs_full = torch.zeros_like(base_probs)
                 for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
                     if expert_local_idx < expert_probs_small.shape[1]:
                         expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
                 
-                # 4. Combine probabilities using the Gating Network
                 final_probs = gating_network(base_probs, expert_probs_full)
                 
-                # 5. Get final prediction
                 _, predicted = torch.max(final_probs, 1)
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
-
+                all_probs.extend(final_probs.cpu().numpy())
 
     # --- Common evaluation logic ---
     print("\nCalculating metrics...")
     accuracy = accuracy_score(all_labels, all_preds)
-    report = classification_report(all_labels, all_preds, zero_division=0)
-    cm = confusion_matrix(all_labels, all_preds)
+    # Get unique labels from all_labels to pass to classification_report
+    unique_labels = np.unique(all_labels)
+    report = classification_report(all_labels, all_preds, labels=unique_labels, zero_division=0)
+    cm = confusion_matrix(all_labels, all_preds, labels=unique_labels)
 
     print("--- Evaluation Results ---")
     print(f"Accuracy: {accuracy:.4f}\n")
@@ -215,7 +214,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
     
     results_file = os.path.join(output_dir, "evaluation_summary.txt")
     with open(results_file, 'w') as f:
-        f.write(f"--- Evaluation Mode: {eval_mode} ---")
+        f.write(f"--- Evaluation Mode: {eval_mode} ---\n")
         if eval_mode == 'ensemble':
             f.write(f"Baseline Model: {baseline_model_path}\n")
             f.write(f"Minority Model: {minority_model_path}\n")
@@ -227,10 +226,52 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         f.write(f"Accuracy: {accuracy:.4f}\n")
         f.write("\nClassification Report:\n")
         f.write(report)
+
+    # --- Open-Set Evaluation Logic ---
+    if open_set_eval:
+        if not known_classes or not unknown_classes:
+            raise ValueError("--known-classes and --unknown-classes are required for open-set evaluation.")
+        
+        print("\n--- Open-Set Evaluation Results ---")
+        
+        confidences = np.max(all_probs, axis=1)
+        
+        # Create binary labels: 1 for known, 0 for unknown
+        y_true_openset = [1 if label in known_classes else 0 for label in all_labels]
+        
+        # AUROC
+        auroc = roc_auc_score(y_true_openset, confidences)
+        print(f"AUROC: {auroc:.4f}")
+        
+        # FPR@TPR95
+        fpr, tpr, thresholds = roc_curve(y_true_openset, confidences)
+        # Find the first index where TPR is >= 0.95
+        tpr_ge_95_indices = np.where(tpr >= 0.95)[0]
+        if len(tpr_ge_95_indices) > 0:
+            idx = tpr_ge_95_indices[0]
+            fpr_at_tpr95 = fpr[idx]
+        else:
+            # If no TPR reaches 0.95, it means the model is very poor.
+            # In this case, we can take the FPR at the highest available TPR.
+            idx = np.argmax(tpr)
+            fpr_at_tpr95 = fpr[idx]
+            print(f"Warning: TPR never reached 0.95. Reporting FPR at highest TPR of {tpr[idx]:.4f}")
+
+        print(f"FPR@TPR95: {fpr_at_tpr95:.4f}")
+
+        with open(results_file, 'a') as f:
+            f.write("\n\n--- Open-Set Evaluation ---\n")
+            f.write(f"Known Classes: {known_classes}\n")
+            f.write(f"Unknown Classes: {unknown_classes}\n")
+            f.write(f"AUROC: {auroc:.4f}\n")
+            f.write(f"FPR@TPR95: {fpr_at_tpr95:.4f}\n")
+
     print(f"\nResults saved to {results_file}")
 
     plt.figure(figsize=(15, 12))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    # Use unique_labels for heatmap ticks
+    tick_labels = [str(l) for l in unique_labels]
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=tick_labels, yticklabels=tick_labels)
     plt.title(f'Confusion Matrix ({eval_mode.capitalize()} Mode)')
     plt.ylabel('Actual Labels')
     plt.xlabel('Predicted Labels')
