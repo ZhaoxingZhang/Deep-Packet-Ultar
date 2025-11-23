@@ -30,18 +30,17 @@ do
     exit 1
   fi
 
-  # Determine the known classes for this fold
-  KNOWN_CLASSES=""
-  for C in $ALL_CLASSES;
-  do
+  # Determine the known classes arguments for this fold
+  KNOWN_CLASSES_ARGS=""
+  for C in $ALL_CLASSES; do
     if [ "$C" != "$EXCLUDED_CLASS" ]; then
-      KNOWN_CLASSES="$KNOWN_CLASSES $C"
+      KNOWN_CLASSES_ARGS="$KNOWN_CLASSES_ARGS --known-classes $C"
     fi
   done
 
   # --- Run Evaluation ---
   echo "--> Running evaluation with model ${MODEL_PATH}..."
-  python evaluation.py \
+  conda run -n deep_packet python evaluation.py \
     --model_path "${MODEL_PATH}" \
     --data_path "${DATA_PATH}" \
     --output_dir "${OUTPUT_DIR}" \
@@ -49,7 +48,7 @@ do
     --eval-mode standard \
     --open-set-eval \
     --unknown-classes "${EXCLUDED_CLASS}" \
-    --known-classes ${KNOWN_CLASSES} # No quotes to pass as multiple args
+    ${KNOWN_CLASSES_ARGS} # Pass the generated arguments string
 
   # --- Extract results ---
   RESULT_FILE="${OUTPUT_DIR}/evaluation_summary.txt"
