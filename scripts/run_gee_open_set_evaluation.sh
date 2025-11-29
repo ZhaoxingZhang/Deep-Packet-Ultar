@@ -35,7 +35,7 @@ MINORITY_CLASSES_BASE=(5 7)
 CLASSES_TO_EXCLUDE=(5 6 7 8 9 10) # Classes to be used as "unknown" in each fold
 
 SOURCE_DATA_DIR="/home/featurize/data/processed_data/vpn"
-BASE_TRAIN_TEST_DIR="/home/featurize/data/train_test_data/open_set_gee"
+BASE_TRAIN_TEST_DIR="train_test_data/open_set_gee"
 BASE_MODEL_DIR="model/open_set_gee"
 BASE_EVAL_DIR="evaluation_results/open_set_gee"
 
