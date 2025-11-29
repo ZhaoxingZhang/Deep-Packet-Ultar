@@ -513,10 +513,24 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
     # initialise local spark
     os.environ["PYSPARK_PYTHON"] = sys.executable
     os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-    memory_gb = psutil.virtual_memory().available // 1024 // 1024 // 1024
+    
+    # --- Robust Spark Configuration ---
+    # Previous memory allocation was too greedy and unstable, leading to OOM errors.
+    # Using a fixed, generous amount of memory and adding robust configurations.
+    driver_memory = "32g"
+    
+    # Set a dedicated local directory for Spark's temporary files within the project
+    spark_local_dir = target_data_dir_path / ".spark_tmp"
+    spark_local_dir.mkdir(exist_ok=True)
+
+    print(f"Configuring Spark with driver memory: {driver_memory}")
+
     spark = (
         SparkSession.builder.master("local[*]")
-        .config("spark.driver.memory", f"{memory_gb}g")
+        .config("spark.driver.memory", driver_memory)
+        .config("spark.driver.maxResultSize", "4g")  # Increase max result size for driver
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")  # Use Arrow for performance
+        .config("spark.local.dir", str(spark_local_dir))  # Set temp directory
         .config("spark.driver.host", "127.0.0.1")
         .getOrCreate()
     )
