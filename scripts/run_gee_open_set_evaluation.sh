@@ -86,22 +86,32 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
 
     # a) Main dataset for baseline expert and gating network training
     echo "    - Generating main dataset..."
-    python -u create_train_test_set.py \
-        --source "${SOURCE_DATA_DIR}" \
-        --target "${FOLD_DATA_DIR}/main" \
-        --experiment_type open_set_hold_out \
-        --exclude-classes "${EXCLUDED_CLASS}" \
-        --task-type traffic
+    MAIN_DATA_TARGET_DIR="${FOLD_DATA_DIR}/main/traffic_classification" # This is where the parquet files will be
+    if [ -d "${MAIN_DATA_TARGET_DIR}" ] && [ "$(find "${MAIN_DATA_TARGET_DIR}" -maxdepth 1 -name "*.parquet" -print -quit)" ]; then
+        echo "        Main dataset already exists and is not empty. Skipping data generation."
+    else
+        python -u create_train_test_set.py \
+            --source "${SOURCE_DATA_DIR}" \
+            --target "${FOLD_DATA_DIR}/main" \
+            --experiment_type open_set_hold_out \
+            --exclude-classes "${EXCLUDED_CLASS}" \
+            --task-type traffic
+    fi
 
     # b) Minority expert dataset
     echo "    - Generating minority expert dataset..."
-    python -u create_train_test_set.py \
-        --source "${SOURCE_DATA_DIR}" \
-        --target "${FOLD_DATA_DIR}/minority" \
-        --experiment_type open_set_hold_out \
-        --exclude-classes "${EXCLUDED_CLASS}" \
-        ${MINORITY_CLASSES_FOLD_STR_ARGS} \
-        --task-type traffic
+    MINORITY_DATA_TARGET_DIR="${FOLD_DATA_DIR}/minority/traffic_classification" # This is where the parquet files will be
+    if [ -d "${MINORITY_DATA_TARGET_DIR}" ] && [ "$(find "${MINORITY_DATA_TARGET_DIR}" -maxdepth 1 -name "*.parquet" -print -quit)" ]; then
+        echo "        Minority expert dataset already exists and is not empty. Skipping data generation."
+    else
+        python -u create_train_test_set.py \
+            --source "${SOURCE_DATA_DIR}" \
+            --target "${FOLD_DATA_DIR}/minority" \
+            --experiment_type open_set_hold_out \
+            --exclude-classes "${EXCLUDED_CLASS}" \
+            ${MINORITY_CLASSES_FOLD_STR_ARGS} \
+            --task-type traffic
+    fi
 
     # --- 2. Model Training ---
     echo "--> Step 2: Training models for Fold ${EXCLUDED_CLASS}..."
