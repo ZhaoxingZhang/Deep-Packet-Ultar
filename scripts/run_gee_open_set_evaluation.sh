@@ -47,13 +47,20 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "================================================================="
 
     # --- Define Fold-Specific Variables ---
-    KNOWN_CLASSES=()
+    KNOWN_CLASSES_ARGS=""
+    LABEL_MAP_STRING=""
+    NEW_LABEL_IDX=0
     for c in "${ALL_CLASSES[@]}"; do
         if [ "$c" != "$EXCLUDED_CLASS" ]; then
-            KNOWN_CLASSES+=("$c")
+            KNOWN_CLASSES_ARGS="$KNOWN_CLASSES_ARGS --known-classes $c"
+            if [ -z "$LABEL_MAP_STRING" ]; then
+                LABEL_MAP_STRING="${NEW_LABEL_IDX}:${c}"
+            else
+                LABEL_MAP_STRING="${LABEL_MAP_STRING},${NEW_LABEL_IDX}:${c}"
+            fi
+            NEW_LABEL_IDX=$((NEW_LABEL_IDX + 1))
         fi
     done
-    KNOWN_CLASSES_STR=$(IFS=,; echo "${KNOWN_CLASSES[*]}")
 
     MINORITY_CLASSES_FOLD=()
     for mc in "${MINORITY_CLASSES_BASE[@]}"; do
@@ -103,15 +110,15 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "    - Training baseline expert..."
     python -u train_resnet.py \
         --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
-        --save_path "${BASELINE_MODEL_PATH}" \
-        --output_dim ${#KNOWN_CLASSES[@]}
+        --model_path "${BASELINE_MODEL_PATH}" \
+        --task traffic
 
     # b) Train Minority Expert
     echo "    - Training minority expert..."
     python -u train_resnet.py \
         --data_path "${FOLD_DATA_DIR}/minority/traffic_classification" \
-        --save_path "${MINORITY_EXPERT_PATH}" \
-        --output_dim ${#MINORITY_CLASSES_FOLD[@]}
+        --model_path "${MINORITY_EXPERT_PATH}" \
+        --task traffic
 
     # c) Train Gating Network
     echo "    - Training gating network..."
@@ -130,11 +137,13 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --model_path "${BASELINE_MODEL_PATH}" \
         --gating_network_path "${GATING_NETWORK_PATH}" \
         --expert_model_path "${MINORITY_EXPERT_PATH}" \
-        --result_path "${FOLD_EVAL_DIR}" \
+        --output_dir "${FOLD_EVAL_DIR}" \
         --eval-mode gating_ensemble \
         --open-set-eval \
-        --known-classes ${KNOWN_CLASSES_STR} \
-        --minority_classes ${MINORITY_CLASSES_FOLD_STR_ARGS} \
+        --unknown-classes "${EXCLUDED_CLASS}" \
+        --label-map "${LABEL_MAP_STRING}" \
+        ${KNOWN_CLASSES_ARGS} \
+        ${MINORITY_CLASSES_FOLD_STR_ARGS} \
         --task-type traffic
 
     echo "--- Finished Fold ${EXCLUDED_CLASS} ---"
