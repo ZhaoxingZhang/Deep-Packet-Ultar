@@ -85,11 +85,17 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "--> Step 1: Generating datasets for Fold ${EXCLUDED_CLASS}..."
 
     # a) Main dataset for baseline expert and gating network training
-    echo "    - Generating main dataset..."
-    MAIN_DATA_TARGET_DIR="${FOLD_DATA_DIR}/main/traffic_classification" # This is where the parquet files will be
-    if [ -d "${MAIN_DATA_TARGET_DIR}" ] && [ "$(find "${MAIN_DATA_TARGET_DIR}" -maxdepth 1 -name "*.parquet" -print -quit)" ]; then
-        echo "        Main dataset already exists and is not empty. Skipping data generation."
+    MAIN_DATA_DIR="${FOLD_DATA_DIR}/main/traffic_classification"
+    MAIN_TRAIN_PATH="${MAIN_DATA_DIR}/train.parquet"
+    MAIN_TEST_PATH="${MAIN_DATA_DIR}/test.parquet"
+
+    if [ -f "${MAIN_TRAIN_PATH}/_SUCCESS" ] && \
+       [ -n "$(find "${MAIN_TRAIN_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ] && \
+       [ -f "${MAIN_TEST_PATH}/_SUCCESS" ] && \
+       [ -n "$(find "${MAIN_TEST_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ]; then
+        echo "    - Main dataset already exists and is valid. Skipping generation."
     else
+        echo "    - Generating main dataset..."
         python -u create_train_test_set.py \
             --source "${SOURCE_DATA_DIR}" \
             --target "${FOLD_DATA_DIR}/main" \
@@ -99,11 +105,17 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     fi
 
     # b) Minority expert dataset
-    echo "    - Generating minority expert dataset..."
-    MINORITY_DATA_TARGET_DIR="${FOLD_DATA_DIR}/minority/traffic_classification" # This is where the parquet files will be
-    if [ -d "${MINORITY_DATA_TARGET_DIR}" ] && [ "$(find "${MINORITY_DATA_TARGET_DIR}" -maxdepth 1 -name "*.parquet" -print -quit)" ]; then
-        echo "        Minority expert dataset already exists and is not empty. Skipping data generation."
+    MINORITY_DATA_DIR="${FOLD_DATA_DIR}/minority/traffic_classification"
+    MINORITY_TRAIN_PATH="${MINORITY_DATA_DIR}/train.parquet"
+    MINORITY_TEST_PATH="${MINORITY_DATA_DIR}/test.parquet"
+
+    if [ -f "${MINORITY_TRAIN_PATH}/_SUCCESS" ] && \
+       [ -n "$(find "${MINORITY_TRAIN_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ] && \
+       [ -f "${MINORITY_TEST_PATH}/_SUCCESS" ] && \
+       [ -n "$(find "${MINORITY_TEST_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ]; then
+        echo "    - Minority expert dataset already exists and is valid. Skipping generation."
     else
+        echo "    - Generating minority expert dataset..."
         python -u create_train_test_set.py \
             --source "${SOURCE_DATA_DIR}" \
             --target "${FOLD_DATA_DIR}/minority" \

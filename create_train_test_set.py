@@ -112,7 +112,32 @@ def split_train_test(df, test_size, under_sampling_train=True):
     return train_df, test_df
 
 
+import time # Add this import
+
 def save_parquet(df, path):
+    # Ensure the target directory is clean before writing.
+    # Spark's "overwrite" mode can be unreliable on some filesystems.
+    if path.exists():
+        print(f"Manually deleting existing directory: {path}")
+        
+        max_retries = 3
+        retry_delay_seconds = 1
+        
+        for attempt in range(max_retries):
+            try:
+                shutil.rmtree(path)
+                print(f"Successfully deleted directory: {path}")
+                break # Exit retry loop if successful
+            except OSError as e:
+                print(f"Attempt {attempt + 1}/{max_retries}: Failed to delete directory {path}: {e}", file=sys.stderr)
+                if attempt < max_retries - 1:
+                    print(f"Retrying in {retry_delay_seconds} second(s)...", file=sys.stderr)
+                    time.sleep(retry_delay_seconds)
+                else:
+                    print(f"ERROR: Failed to delete directory {path} after {max_retries} attempts. This is a fatal error for the 'overwrite' operation.", file=sys.stderr)
+                    print(f"Please check file permissions and ensure no other processes are using this directory.", file=sys.stderr)
+                    raise # Re-raise the exception if all retries fail
+
     output_path = path.absolute().as_uri()
     (df.write.mode("overwrite").parquet(output_path))
 
