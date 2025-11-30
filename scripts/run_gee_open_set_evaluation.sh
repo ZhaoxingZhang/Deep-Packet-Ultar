@@ -179,7 +179,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
         ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
         --output_path "${GATING_NETWORK_PATH}" \
-        --epochs 10 \
+        --epochs 200 \
         --lr 0.001
 
     # 3. Evaluation
