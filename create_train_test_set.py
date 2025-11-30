@@ -517,7 +517,8 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
     # --- Robust Spark Configuration ---
     # Previous memory allocation was too greedy and unstable, leading to OOM errors.
     # Using a fixed, generous amount of memory and adding robust configurations.
-    driver_memory = "32g"
+    memory_gb = psutil.virtual_memory().available // 1024 // 1024 // 1024
+    driver_memory = f"{memory_gb}g"
     
     # Set a dedicated local directory for Spark's temporary files within the project
     spark_local_dir = target_data_dir_path / ".spark_tmp"
