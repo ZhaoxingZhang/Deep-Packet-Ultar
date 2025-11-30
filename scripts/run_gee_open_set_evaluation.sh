@@ -101,7 +101,9 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
             --target "${FOLD_DATA_DIR}/main" \
             --experiment_type open_set_hold_out \
             --exclude-classes "${EXCLUDED_CLASS}" \
-            --task-type traffic
+            --task-type traffic \
+            --fraction 0.01 \
+            --batch_size 50
     fi
 
     # b) Minority expert dataset
@@ -122,7 +124,9 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
             --experiment_type open_set_hold_out \
             --exclude-classes "${EXCLUDED_CLASS}" \
             ${MINORITY_CLASSES_FOLD_STR_ARGS} \
-            --task-type traffic
+            --task-type traffic \
+            --fraction 0.01 \
+            --batch_size 50
     fi
 
     # --- 2. Model Training ---
