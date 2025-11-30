@@ -133,28 +133,37 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "--> Step 2: Training models for Fold ${EXCLUDED_CLASS}..."
 
     # a) Train Baseline (Majority) Expert
-    echo "    - Training baseline expert..."
-    python -u train_resnet.py \
-        --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
-        --model_path "${BASELINE_MODEL_PATH}" \
-        --task traffic
+    if [ -f "${BASELINE_MODEL_PATH}" ]; then
+        echo "    - Baseline expert model already exists. Skipping training."
+    else
+        echo "    - Training baseline expert..."
+        python -u train_resnet.py \
+            --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
+            --model_path "${BASELINE_MODEL_PATH}" \
+            --task traffic
+    fi
 
     # b) Train Minority Expert
-    echo "    - Training minority expert..."
-    python -u train_resnet.py \
-        --data_path "${FOLD_DATA_DIR}/minority/traffic_classification" \
-        --model_path "${MINORITY_EXPERT_PATH}" \
-        --task traffic
+    if [ -f "${MINORITY_EXPERT_PATH}" ]; then
+        echo "    - Minority expert model already exists. Skipping training."
+    else
+        echo "    - Training minority expert..."
+        python -u train_resnet.py \
+            --data_path "${FOLD_DATA_DIR}/minority/traffic_classification" \
+            --model_path "${MINORITY_EXPERT_PATH}" \
+            --task traffic
+    fi
 
     # c) Train Gating Network
     echo "    - Training gating network..."
     python -u train_gating_network.py \
-        --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
+        --train_data_path "${FOLD_DATA_DIR}/main/traffic_classification/train.parquet" \
         --baseline_model_path "${BASELINE_MODEL_PATH}" \
-        --expert_model_path "${MINORITY_EXPERT_PATH}" \
-        --gating_model_save_path "${GATING_NETWORK_PATH}" \
-        --known_classes_num ${#KNOWN_CLASSES[@]} \
-        --minority_classes_num ${#MINORITY_CLASSES_FOLD[@]}
+        --minority_model_path "${MINORITY_EXPERT_PATH}" \
+        ${MINORITY_CLASSES_FOLD_STR_ARGS} \
+        --output_path "${GATING_NETWORK_PATH}" \
+        --epochs 20 \
+        --lr 0.001
 
     # --- 3. Evaluation ---
     echo "--> Step 3: Evaluating GEE model for Fold ${EXCLUDED_CLASS}..."
