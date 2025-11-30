@@ -199,8 +199,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --unknown-classes "${EXCLUDED_CLASS}" \
         --label-map "${LABEL_MAP_STRING}" \
         ${KNOWN_CLASSES_ARGS} \
-        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
-        --task-type traffic
+        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE}
 
     echo "--- Finished Fold ${EXCLUDED_CLASS} ---"
     echo ""
