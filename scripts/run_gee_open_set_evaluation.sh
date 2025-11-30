@@ -68,7 +68,8 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
             MINORITY_CLASSES_FOLD+=("$mc")
         fi
     done
-    MINORITY_CLASSES_FOLD_STR_ARGS=$(printf -- "--minority-classes %s " "${MINORITY_CLASSES_FOLD[@]}")
+    MINORITY_CLASSES_FOLD_STR_ARGS_HYPHEN=$(printf -- "--minority-classes %s " "${MINORITY_CLASSES_FOLD[@]}")
+    MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE=$(printf -- "--minority_classes %s " "${MINORITY_CLASSES_FOLD[@]}")
 
 
     FOLD_DATA_DIR="${BASE_TRAIN_TEST_DIR}/exp_exclude_${EXCLUDED_CLASS}"
@@ -129,7 +130,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
             --target "${FOLD_DATA_DIR}/minority" \
             --experiment_type open_set_hold_out \
             --exclude-classes "${EXCLUDED_CLASS}" \
-            ${MINORITY_CLASSES_FOLD_STR_ARGS} \
+            ${MINORITY_CLASSES_FOLD_STR_ARGS_HYPHEN} \
             --task-type traffic \
             --fraction 0.01 \
             --batch_size 50
@@ -176,7 +177,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --train_data_path "${FOLD_DATA_DIR}/main/traffic_classification/train.parquet" \
         --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
         --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
-        ${MINORITY_CLASSES_FOLD_STR_ARGS} \
+        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
         --output_path "${GATING_NETWORK_PATH}" \
         --epochs 10 \
         --lr 0.001
@@ -194,7 +195,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --unknown-classes "${EXCLUDED_CLASS}" \
         --label-map "${LABEL_MAP_STRING}" \
         ${KNOWN_CLASSES_ARGS} \
-        ${MINORITY_CLASSES_FOLD_STR_ARGS} \
+        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
         --task-type traffic
 
     echo "--- Finished Fold ${EXCLUDED_CLASS} ---"
