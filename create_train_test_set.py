@@ -522,7 +522,7 @@ def main(source, target, test_size, known_ratio, unknown_train_ratio, experiment
     
     # Set a dedicated local directory for Spark's temporary files within the project
     spark_local_dir = target_data_dir_path / ".spark_tmp"
-    spark_local_dir.mkdir(exist_ok=True)
+    spark_local_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Configuring Spark with driver memory: {driver_memory}")
 
