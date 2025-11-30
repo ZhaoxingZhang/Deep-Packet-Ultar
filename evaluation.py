@@ -147,7 +147,7 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         print(f"--- Running in GATING ENSEMBLE mode ---\n")
 
         print(f"Loading baseline model from {baseline_model_path}...")
-        baseline_model = ResNet.load_from_checkpoint(model_path, map_location=device)
+        baseline_model = ResNet.load_from_checkpoint(baseline_model_path, map_location=device)
         baseline_model.to(device)
         baseline_model.eval()
 
