@@ -75,9 +75,15 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     FOLD_MODEL_DIR="${BASE_MODEL_DIR}/exclude_${EXCLUDED_CLASS}"
     FOLD_EVAL_DIR="${BASE_EVAL_DIR}/exclude_${EXCLUDED_CLASS}"
 
-    BASELINE_MODEL_PATH="${FOLD_MODEL_DIR}/baseline.pt.ckpt"
-    MINORITY_EXPERT_PATH="${FOLD_MODEL_DIR}/minority_expert.pt.ckpt"
+    # Define base names for models (without .ckpt, used for passing to train_resnet.py)
+    BASE_NAME_BASELINE="${FOLD_MODEL_DIR}/baseline.pt"
+    BASE_NAME_MINORITY="${FOLD_MODEL_DIR}/minority_expert.pt"
+
+    # Define actual model paths (with .ckpt, for checking existence and downstream use)
+    FINAL_BASELINE_MODEL_PATH="${BASE_NAME_BASELINE}.ckpt"
+    FINAL_MINORITY_EXPERT_PATH="${BASE_NAME_MINORITY}.ckpt"
     GATING_NETWORK_PATH="${FOLD_MODEL_DIR}/gating_network.pt"
+
 
     mkdir -p "${FOLD_DATA_DIR}" "${FOLD_MODEL_DIR}" "${FOLD_EVAL_DIR}"
 
@@ -133,24 +139,34 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "--> Step 2: Training models for Fold ${EXCLUDED_CLASS}..."
 
     # a) Train Baseline (Majority) Expert
-    if [ -f "${BASELINE_MODEL_PATH}" ]; then
+    if [ -f "${FINAL_BASELINE_MODEL_PATH}.ckpt" ]; then
+        echo "    - Found baseline model with incorrect .ckpt.ckpt suffix. Renaming to .ckpt."
+        mv "${FINAL_BASELINE_MODEL_PATH}.ckpt" "${FINAL_BASELINE_MODEL_PATH}"
+    fi
+
+    if [ -f "${FINAL_BASELINE_MODEL_PATH}" ]; then
         echo "    - Baseline expert model already exists. Skipping training."
     else
         echo "    - Training baseline expert..."
         python -u train_resnet.py \
             --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
-            --model_path "${BASELINE_MODEL_PATH}" \
+            --model_path "${BASE_NAME_BASELINE}" \
             --task traffic
     fi
 
     # b) Train Minority Expert
-    if [ -f "${MINORITY_EXPERT_PATH}" ]; then
+    if [ -f "${FINAL_MINORITY_EXPERT_PATH}.ckpt" ]; then
+        echo "    - Found minority expert model with incorrect .ckpt.ckpt suffix. Renaming to .ckpt."
+        mv "${FINAL_MINORITY_EXPERT_PATH}.ckpt" "${FINAL_MINORITY_EXPERT_PATH}"
+    fi
+
+    if [ -f "${FINAL_MINORITY_EXPERT_PATH}" ]; then
         echo "    - Minority expert model already exists. Skipping training."
     else
         echo "    - Training minority expert..."
         python -u train_resnet.py \
             --data_path "${FOLD_DATA_DIR}/minority/traffic_classification" \
-            --model_path "${MINORITY_EXPERT_PATH}" \
+            --model_path "${BASE_NAME_MINORITY}" \
             --task traffic
     fi
 
