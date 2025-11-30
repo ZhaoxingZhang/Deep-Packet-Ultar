@@ -188,7 +188,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --data_path "${FOLD_DATA_DIR}/main/traffic_classification/test.parquet" \
         --model_path "${FINAL_BASELINE_MODEL_PATH}" \
         --gating_network_path "${GATING_NETWORK_PATH}" \
-        --expert_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
+        --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
         --output_dir "${FOLD_EVAL_DIR}" \
         --eval-mode gating_ensemble \
         --open-set-eval \
