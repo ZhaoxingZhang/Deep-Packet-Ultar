@@ -172,15 +172,19 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     fi
 
     # c) Train Gating Network
-    echo "    - Training gating network..."
-    python -u train_gating_network.py \
-        --train_data_path "${FOLD_DATA_DIR}/main/traffic_classification/train.parquet" \
-        --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
-        --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
-        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
-        --output_path "${GATING_NETWORK_PATH}" \
-        --epochs 200 \
-        --lr 0.001
+    if [ -f "${GATING_NETWORK_PATH}" ]; then
+        echo "    - Gating network model already exists. Skipping training."
+    else
+        echo "    - Training gating network..."
+        python -u train_gating_network.py \
+            --train_data_path "${FOLD_DATA_DIR}/main/traffic_classification/train.parquet" \
+            --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
+            --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
+            ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
+            --output_path "${GATING_NETWORK_PATH}" \
+            --epochs 200 \
+            --lr 0.001
+    fi
 
     # 3. Evaluation
     echo "--> Step 3: Evaluating GEE model for Fold ${EXCLUDED_CLASS}..."
