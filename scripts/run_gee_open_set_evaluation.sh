@@ -174,11 +174,11 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "    - Training gating network..."
     python -u train_gating_network.py \
         --train_data_path "${FOLD_DATA_DIR}/main/traffic_classification/train.parquet" \
-        --baseline_model_path "${BASELINE_MODEL_PATH}" \
-        --minority_model_path "${MINORITY_EXPERT_PATH}" \
+        --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
+        --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
         ${MINORITY_CLASSES_FOLD_STR_ARGS} \
         --output_path "${GATING_NETWORK_PATH}" \
-        --epochs 20 \
+        --epochs 10 \
         --lr 0.001
 
     # --- 3. Evaluation ---
