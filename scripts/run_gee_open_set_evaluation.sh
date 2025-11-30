@@ -190,7 +190,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     echo "--> Step 3: Evaluating GEE model for Fold ${EXCLUDED_CLASS}..."
     python -u evaluation.py \
         --data_path "${FOLD_DATA_DIR}/main/traffic_classification/test.parquet" \
-        --model_path "${FINAL_BASELINE_MODEL_PATH}" \
+        --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
         --gating_network_path "${GATING_NETWORK_PATH}" \
         --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
         --output_dir "${FOLD_EVAL_DIR}" \
