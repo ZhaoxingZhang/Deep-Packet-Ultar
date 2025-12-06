@@ -29,49 +29,21 @@ def load_feature_data(data_path):
     dataloader = DataLoader(dataset, batch_size=256, shuffle=False)
     return dataloader
 
-@click.command()
-@click.option("--train_data_path", required=True, help="Path to the training data parquet file.")
-@click.option("--baseline_model_path", required=True, help="Path to the pre-trained baseline model.")
-@click.option("--minority_model_path", required=True, help="Path to the pre-trained minority expert model.")
-@click.option("--minority_classes", type=int, multiple=True, required=True, help="The original labels of the minority classes.")
-@click.option("--output_path", required=True, help="Path to save the trained Gating Network.")
-@click.option("--epochs", type=int, default=10, help="Number of epochs to train the Gating Network.")
-@click.option("--lr", type=float, default=0.001, help="Learning rate for the Gating Network.")
-def train_gating_network(train_data_path, baseline_model_path, minority_model_path, minority_classes, output_path, epochs, lr):
+def generate_gating_inputs(feature_dataloader, baseline_model, minority_model, minority_classes, device):
     """
-    Trains a Gating Network to combine the outputs of a baseline and a minority expert model
-    using a Weighted Cross-Entropy Loss to handle class imbalance.
+    Processes raw features through baseline and expert models to generate inputs
+    for the Gating Network.
+    Returns:
+        - A tensor of concatenated probability vectors.
+        - A tensor of original labels.
     """
-    print("--- Starting Gating Network Training (Weighted Cross-Entropy) ---")
-    
-    # --- 1. Load Models (Frozen) ---
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    print(f"Loading baseline model from {baseline_model_path}...")
-    baseline_model = ResNet.load_from_checkpoint(baseline_model_path).to(device)
-    baseline_model.eval()
-    for param in baseline_model.parameters():
-        param.requires_grad = False
-
-    print(f"Loading minority expert model from {minority_model_path}...")
-    minority_model = ResNet.load_from_checkpoint(minority_model_path).to(device)
-    minority_model.eval()
-    for param in minority_model.parameters():
-        param.requires_grad = False
-
-    # --- 2. Load Data ---
-    print(f"Loading training data from {train_data_path}...")
-    feature_dataloader = load_feature_data(train_data_path)
-
-    # --- 3. Prepare Data for Gating Network Training ---
     num_total_classes = baseline_model.out.out_features
     expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
     
-    gating_train_inputs = []
-    gating_train_labels = []
+    gating_inputs = []
+    original_labels = []
     
-    print("Generating Gating Network training data by processing with base models...")
+    print("  -> Generating model predictions for gating input...")
     with torch.no_grad():
         for features, labels in feature_dataloader:
             features = features.to(device)
@@ -90,15 +62,81 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
                     expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
             
             # The input to the gating network is the concatenated probabilities
-            gating_train_inputs.append(torch.cat((base_probs, expert_probs_full), dim=1).cpu())
-            gating_train_labels.append(labels.cpu())
+            gating_inputs.append(torch.cat((base_probs, expert_probs_full), dim=1).cpu())
+            original_labels.append(labels.cpu())
     
-    gating_train_inputs = torch.cat(gating_train_inputs, dim=0)
-    gating_train_labels = torch.cat(gating_train_labels, dim=0)
+    gating_inputs = torch.cat(gating_inputs, dim=0)
+    original_labels = torch.cat(original_labels, dim=0)
+    
+    return gating_inputs, original_labels
+
+@click.command()
+@click.option("--train_data_path", required=True, help="Path to the training data parquet file for KNOWN classes.")
+@click.option("--baseline_model_path", required=True, help="Path to the pre-trained baseline model.")
+@click.option("--minority_model_path", required=True, help="Path to the pre-trained minority expert model.")
+@click.option("--minority_classes", type=int, multiple=True, required=True, help="The original labels of the minority classes.")
+@click.option("--output_path", required=True, help="Path to save the trained Gating Network.")
+@click.option("--epochs", type=int, default=10, help="Number of epochs to train the Gating Network.")
+@click.option("--lr", type=float, default=0.001, help="Learning rate for the Gating Network.")
+@click.option("--use-garbage-class", is_flag=True, help="Enable training with a garbage class for open-set.")
+@click.option("--unknown-class-data-path", default=None, help="Path to the data for the UNKNOWN/GARBAGE class. Required if --use-garbage-class is set.")
+def train_gating_network(train_data_path, baseline_model_path, minority_model_path, minority_classes, output_path, epochs, lr, use_garbage_class, unknown_class_data_path):
+    """
+    Trains a Gating Network to combine the outputs of a baseline and a minority expert model.
+    Can optionally include a 'garbage' class for open-set recognition training.
+    """
+    title = "Gating Network Training (Garbage Class)" if use_garbage_class else "Gating Network Training (Weighted Cross-Entropy)"
+    print(f"--- Starting {title} ---")
+    
+    # --- 1. Load Models (Frozen) ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    print(f"Loading baseline model from {baseline_model_path}...")
+    baseline_model = ResNet.load_from_checkpoint(baseline_model_path).to(device)
+    baseline_model.eval()
+    for param in baseline_model.parameters():
+        param.requires_grad = False
+
+    print(f"Loading minority expert model from {minority_model_path}...")
+    minority_model = ResNet.load_from_checkpoint(minority_model_path).to(device)
+    minority_model.eval()
+    for param in minority_model.parameters():
+        param.requires_grad = False
+
+    num_known_classes = baseline_model.out.out_features
+
+    # --- 2. Prepare Data for Gating Network Training ---
+    print(f"Loading KNOWN class data from {train_data_path}...")
+    known_feature_dataloader = load_feature_data(train_data_path)
+    gating_known_inputs, gating_known_labels = generate_gating_inputs(
+        known_feature_dataloader, baseline_model, minority_model, minority_classes, device
+    )
+
+    if use_garbage_class:
+        if not unknown_class_data_path:
+            raise ValueError("--unknown-class-data-path must be provided when --use-garbage-class is enabled.")
+        
+        print(f"Loading UNKNOWN class data from {unknown_class_data_path}...")
+        unknown_feature_dataloader = load_feature_data(unknown_class_data_path)
+        gating_garbage_inputs, _ = generate_gating_inputs(
+            unknown_feature_dataloader, baseline_model, minority_model, minority_classes, device
+        )
+        
+        garbage_label = num_known_classes  # New label for the garbage class
+        gating_garbage_labels = torch.full((gating_garbage_inputs.shape[0],), garbage_label, dtype=torch.int64)
+        
+        print(f"Combining {gating_known_inputs.shape[0]} known samples with {gating_garbage_inputs.shape[0]} unknown (garbage) samples.")
+        
+        gating_train_inputs = torch.cat((gating_known_inputs, gating_garbage_inputs), dim=0)
+        gating_train_labels = torch.cat((gating_known_labels, gating_garbage_labels), dim=0)
+    else:
+        gating_train_inputs = gating_known_inputs
+        gating_train_labels = gating_known_labels
 
     full_gating_dataset = TensorDataset(gating_train_inputs, gating_train_labels)
     
-    # --- 4. Create Training and Validation Sets ---
+    # --- 3. Create Training and Validation Sets ---
     val_split = 0.1
     val_size = int(len(full_gating_dataset) * val_split)
     train_size = len(full_gating_dataset) - val_size
@@ -108,16 +146,20 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     val_dataloader = DataLoader(val_dataset, batch_size=256, shuffle=False)
     print(f"Created training dataset with {len(train_dataset)} samples and validation dataset with {len(val_dataset)} samples.")
 
-    # --- 5. Train Gating Network ---
-    # Calculate class weights using only the training set labels
-    train_labels = train_dataset.dataset.tensors[1][train_dataset.indices]
-    class_counts_full = torch.bincount(train_labels, minlength=num_total_classes)
+    # --- 4. Train Gating Network ---
+    num_output_classes = num_known_classes + 1 if use_garbage_class else num_known_classes
     
-    class_weights = len(train_labels) / (num_total_classes * (class_counts_full.float() + 1e-6))
+    train_labels = train_dataset.dataset.tensors[1][train_dataset.indices]
+    class_counts_full = torch.bincount(train_labels, minlength=num_output_classes)
+    
+    class_weights = len(train_labels) / (num_output_classes * (class_counts_full.float() + 1e-6))
     class_weights = class_weights.to(device)
     print(f"Calculated class weights: {class_weights}")
 
-    gating_network = GatingNetwork(num_total_classes).to(device)
+    gating_network = GatingNetwork(
+        num_classes=num_known_classes, 
+        use_garbage_class=use_garbage_class
+    ).to(device)
     optimizer = torch.optim.Adam(gating_network.parameters(), lr=lr)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
@@ -125,7 +167,6 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     print(f"Training Gating Network for {epochs} epochs...")
 
     for epoch in range(epochs):
-        # --- Training Phase ---
         gating_network.train()
         total_train_loss = 0
         train_correct_preds = 0
@@ -134,8 +175,8 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             
-            current_base_probs = inputs[:, :num_total_classes]
-            current_expert_probs_full = inputs[:, num_total_classes:]
+            current_base_probs = inputs[:, :num_known_classes]
+            current_expert_probs_full = inputs[:, num_known_classes:]
 
             outputs = gating_network(current_base_probs, current_expert_probs_full)
             loss = criterion(outputs, labels)
@@ -150,14 +191,13 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
         avg_train_loss = total_train_loss / len(train_dataloader)
         train_accuracy = train_correct_preds / train_total_samples
 
-        # --- Validation Phase ---
         gating_network.eval()
         total_val_loss = 0
         with torch.no_grad():
             for inputs, labels in val_dataloader:
                 inputs, labels = inputs.to(device), labels.to(device)
-                current_base_probs = inputs[:, :num_total_classes]
-                current_expert_probs_full = inputs[:, num_total_classes:]
+                current_base_probs = inputs[:, :num_known_classes]
+                current_expert_probs_full = inputs[:, num_known_classes:]
                 
                 outputs = gating_network(current_base_probs, current_expert_probs_full)
                 loss = criterion(outputs, labels)
@@ -167,7 +207,6 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
 
         print(f"Epoch {epoch+1}/{epochs} -> Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.4f} | Val Loss: {avg_val_loss:.4f}")
 
-        # --- Checkpointing ---
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             output_dir = os.path.dirname(output_path)

@@ -253,13 +253,15 @@ class GatingNetwork(nn.Module):
     A trainable MLP that learns to combine probability outputs from a baseline
     and an expert model.
     """
-    def __init__(self, num_classes, hidden_dim_scale=1):
+    def __init__(self, num_classes, hidden_dim_scale=1, use_garbage_class=False):
         """
         Initializes the Gating Network.
         Args:
-            num_classes (int): The total number of output classes.
-            hidden_dim_scale (int): Scale factor for the hidden layer dimension 
+            num_classes (int): The total number of known output classes.
+            hidden_dim_scale (int): Scale factor for the hidden layer dimension
                                     relative to num_classes.
+            use_garbage_class (bool): If True, add an extra output neuron for the
+                                      garbage/unknown class.
         """
         super().__init__()
         self.num_classes = num_classes
@@ -268,12 +270,14 @@ class GatingNetwork(nn.Module):
         # probability vectors from two models.
         input_dim = 2 * num_classes
         hidden_dim = num_classes * hidden_dim_scale
+        
+        output_dim = num_classes + 1 if use_garbage_class else num_classes
 
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, num_classes),
-            nn.Softmax(dim=1)
+            # Output raw logits, not probabilities. CrossEntropyLoss will handle softmax.
+            nn.Linear(hidden_dim, output_dim)
         )
 
     def forward(self, baseline_probs, expert_probs):

@@ -12,13 +12,13 @@
 #
 # For each fold, it performs the following steps:
 # 1.  **Data Generation**:
-#     - Creates a main dataset where one class is held out as "unknown".
-#     - Creates a specialized dataset for the minority expert, also excluding the
-#       "unknown" class.
+#     - Creates a main dataset for known classes.
+#     - Creates a specialized dataset for the minority expert.
+#     - Creates a dataset containing only the "unknown" class for garbage training.
 # 2.  **Model Training**:
 #     - Trains the baseline (majority) expert on the main training set.
 #     - Trains the minority expert on its specialized training set.
-#     - Trains the gating network using the outputs from the two experts.
+#     - Trains the gating network using the known classes AND the garbage class.
 # 3.  **Evaluation**:
 #     - Runs the final evaluation using the trained GEE model against a test
 #       set that includes the "unknown" class.
@@ -83,7 +83,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     # Define actual model paths (with .ckpt, for checking existence and downstream use)
     FINAL_BASELINE_MODEL_PATH="${BASE_NAME_BASELINE}.ckpt"
     FINAL_MINORITY_EXPERT_PATH="${BASE_NAME_MINORITY}.ckpt"
-    GATING_NETWORK_PATH="${FOLD_MODEL_DIR}/gating_network.pt"
+    GATING_NETWORK_PATH="${FOLD_MODEL_DIR}/gating_network_with_garbage.pt" # New name for the model
 
 
     mkdir -p "${FOLD_DATA_DIR}" "${FOLD_MODEL_DIR}" "${FOLD_EVAL_DIR}"
@@ -91,16 +91,13 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
     # --- 1. Data Generation ---
     echo "--> Step 1: Generating datasets for Fold ${EXCLUDED_CLASS}..."
 
-    # a) Main dataset for baseline expert and gating network training
+    # a) Main dataset for baseline expert (known classes only in train)
     MAIN_DATA_DIR="${FOLD_DATA_DIR}/main/traffic_classification"
     MAIN_TRAIN_PATH="${MAIN_DATA_DIR}/train.parquet"
     MAIN_TEST_PATH="${MAIN_DATA_DIR}/test.parquet"
 
-    if [ -f "${MAIN_TRAIN_PATH}/_SUCCESS" ] && \
-       [ -n "$(find "${MAIN_TRAIN_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ] && \
-       [ -f "${MAIN_TEST_PATH}/_SUCCESS" ] && \
-       [ -n "$(find "${MAIN_TEST_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ]; then
-        echo "    - Main dataset already exists and is valid. Skipping generation."
+    if [ -f "${MAIN_TRAIN_PATH}/_SUCCESS" ]; then
+        echo "    - Main dataset (known) already exists. Skipping generation."
     else
         echo "    - Generating main dataset..."
         python -u create_train_test_set.py \
@@ -113,16 +110,12 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
             --batch_size 50
     fi
 
-    # b) Minority expert dataset
+    # b) Minority expert dataset (known minority classes only in train)
     MINORITY_DATA_DIR="${FOLD_DATA_DIR}/minority/traffic_classification"
     MINORITY_TRAIN_PATH="${MINORITY_DATA_DIR}/train.parquet"
-    MINORITY_TEST_PATH="${MINORITY_DATA_DIR}/test.parquet"
-
-    if [ -f "${MINORITY_TRAIN_PATH}/_SUCCESS" ] && \
-       [ -n "$(find "${MINORITY_TRAIN_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ] && \
-       [ -f "${MINORITY_TEST_PATH}/_SUCCESS" ] && \
-       [ -n "$(find "${MINORITY_TEST_PATH}" -maxdepth 1 -name 'part-*.parquet' -print -quit)" ]; then
-        echo "    - Minority expert dataset already exists and is valid. Skipping generation."
+    
+    if [ -f "${MINORITY_TRAIN_PATH}/_SUCCESS" ]; then
+        echo "    - Minority expert dataset already exists. Skipping generation."
     else
         echo "    - Generating minority expert dataset..."
         python -u create_train_test_set.py \
@@ -135,61 +128,72 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
             --fraction 0.01 \
             --batch_size 50
     fi
+    
+    # c) Unknown (Garbage) class dataset for gating network training
+    UNKNOWN_DATA_DIR="${FOLD_DATA_DIR}/unknown/traffic_classification"
+    UNKNOWN_TRAIN_PATH="${UNKNOWN_DATA_DIR}/train.parquet"
+
+    if [ -f "${UNKNOWN_TRAIN_PATH}/_SUCCESS" ]; then
+        echo "    - Unknown (garbage) class dataset already exists. Skipping generation."
+    else
+        echo "    - Generating unknown (garbage) class dataset..."
+        python -u create_train_test_set.py \
+            --source "${SOURCE_DATA_DIR}" \
+            --target "${FOLD_DATA_DIR}/unknown" \
+            --experiment_type minority_only \
+            --minority-classes "${EXCLUDED_CLASS}" \
+            --task-type traffic \
+            --fraction 0.01 \
+            --batch_size 50
+    fi
+
 
     # --- 2. Model Training ---
     echo "--> Step 2: Training models for Fold ${EXCLUDED_CLASS}..."
 
     # a) Train Baseline (Majority) Expert
-    if [ -f "${FINAL_BASELINE_MODEL_PATH}.ckpt" ]; then
-        echo "    - Found baseline model with incorrect .ckpt.ckpt suffix. Renaming to .ckpt."
-        mv "${FINAL_BASELINE_MODEL_PATH}.ckpt" "${FINAL_BASELINE_MODEL_PATH}"
-    fi
-
-    if [ -f "${FINAL_BASELINE_MODEL_PATH}" ]; then
-        echo "    - Baseline expert model already exists. Skipping training."
-    else
+    if [ ! -f "${FINAL_BASELINE_MODEL_PATH}" ]; then
         echo "    - Training baseline expert..."
         python -u train_resnet.py \
-            --data_path "${FOLD_DATA_DIR}/main/traffic_classification" \
+            --data_path "${MAIN_DATA_DIR}" \
             --model_path "${BASE_NAME_BASELINE}" \
             --task traffic
+    else
+        echo "    - Baseline expert model already exists. Skipping training."
     fi
 
     # b) Train Minority Expert
-    if [ -f "${FINAL_MINORITY_EXPERT_PATH}.ckpt" ]; then
-        echo "    - Found minority expert model with incorrect .ckpt.ckpt suffix. Renaming to .ckpt."
-        mv "${FINAL_MINORITY_EXPERT_PATH}.ckpt" "${FINAL_MINORITY_EXPERT_PATH}"
-    fi
-
-    if [ -f "${FINAL_MINORITY_EXPERT_PATH}" ]; then
-        echo "    - Minority expert model already exists. Skipping training."
-    else
+    if [ ! -f "${FINAL_MINORITY_EXPERT_PATH}" ]; then
         echo "    - Training minority expert..."
         python -u train_resnet.py \
-            --data_path "${FOLD_DATA_DIR}/minority/traffic_classification" \
+            --data_path "${MINORITY_DATA_DIR}" \
             --model_path "${BASE_NAME_MINORITY}" \
             --task traffic
+    else
+        echo "    - Minority expert model already exists. Skipping training."
     fi
 
     # c) Train Gating Network
-    if [ -f "${GATING_NETWORK_PATH}" ]; then
-        echo "    - Gating network model already exists. Skipping training."
-    else
-        echo "    - Training gating network..."
+    if [ ! -f "${GATING_NETWORK_PATH}" ]; then
+        echo "    - Training gating network (with garbage class)..."
         python -u train_gating_network.py \
-            --train_data_path "${FOLD_DATA_DIR}/main/traffic_classification/train.parquet" \
+            --train_data_path "${MAIN_TRAIN_PATH}" \
             --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
             --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
             ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
             --output_path "${GATING_NETWORK_PATH}" \
             --epochs 200 \
-            --lr 0.001
+            --lr 0.001 \
+            --use-garbage-class \
+            --unknown-class-data-path "${UNKNOWN_TRAIN_PATH}"
+    else
+        echo "    - Gating network model already exists. Skipping training."
     fi
 
     # 3. Evaluation
     echo "--> Step 3: Evaluating GEE model for Fold ${EXCLUDED_CLASS}..."
     python -u evaluation.py \
-        --data_path "${FOLD_DATA_DIR}/main/traffic_classification/test.parquet" \
+        --data_path "${MAIN_TEST_PATH}" \
         --baseline_model_path "${FINAL_BASELINE_MODEL_PATH}" \
         --gating_network_path "${GATING_NETWORK_PATH}" \
         --minority_model_path "${FINAL_MINORITY_EXPERT_PATH}" \
@@ -199,7 +203,8 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         --unknown-classes "${EXCLUDED_CLASS}" \
         --label-map "${LABEL_MAP_STRING}" \
         ${KNOWN_CLASSES_ARGS} \
-        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE}
+        ${MINORITY_CLASSES_FOLD_STR_ARGS_UNDERSCORE} \
+        --gating-has-garbage-class
 
     echo "--- Finished Fold ${EXCLUDED_CLASS} ---"
     echo ""
