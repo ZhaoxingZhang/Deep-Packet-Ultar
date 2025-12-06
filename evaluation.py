@@ -106,6 +106,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         
         print(f"--- Running in ENSEMBLE mode ---")
         # ... (ensemble logic remains unchanged) ...
+        # Note: This mode is not fully updated with the latest logic, focusing on gating_ensemble
+        pass
 
     elif eval_mode == 'gating_ensemble':
         if not all([baseline_model_path, minority_model_path, minority_classes, gating_network_path]):
@@ -153,7 +155,6 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                     if expert_local_idx < expert_probs_small.shape[1]:
                         expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
                 
-                # Gating network now outputs logits
                 final_logits = gating_network(base_probs, expert_probs_full)
                 final_probs = torch.nn.functional.softmax(final_logits, dim=1)
                 
@@ -163,7 +164,6 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                 all_probs.extend(final_probs.cpu().numpy())
 
     # --- Remap predictions if a label map is provided ---
-    # This logic now correctly handles garbage class predictions by mapping them to -1
     if label_map:
         print(f"\nApplying label map: {label_map}")
         label_mapping = {int(k): int(v) for k, v in (item.split(':') for item in label_map.split(','))}
@@ -187,16 +187,63 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
     print(report)
     
     results_file = os.path.join(output_dir, "evaluation_summary.txt")
-    with open(results_file, 'a') as f:
-        f.write("\n\n--- Open-Set Evaluation ---\n")
-        f.write(f"Known Classes: {known_classes}\n")
-        if unknown_classes:
-            f.write(f"Unknown Classes: {unknown_classes}\n")
-        f.write(f"AUROC: {auroc:.4f}\n")
-        f.write(f"FPR@TPR95: {fpr_at_tpr95:.4f}\n")
-    
+    with open(results_file, 'w') as f:
+        f.write(f"--- Evaluation Mode: {eval_mode} ---\n")
+        # Add more details based on mode
+        f.write(f"Accuracy: {accuracy:.4f}\n")
+        f.write("\nClassification Report:\n")
+        f.write(report)
+
+    # --- Open-Set Evaluation Logic ---
+    if open_set_eval:
+        if not known_classes:
+            raise ValueError("--known-classes is required for open-set evaluation.")
+        
+        print("\n--- Open-Set Evaluation Results ---")
+        
+        y_true_openset = [1 if label in known_classes else 0 for label in all_labels]
+        all_probs = np.array(all_probs)
+
+        auroc = np.nan
+        fpr_at_tpr95 = np.nan
+
+        if len(np.unique(y_true_openset)) < 2:
+            print("Warning: Only one class present in y_true_openset (all known or all unknown). Cannot compute AUROC and FPR@TPR95.")
+        else:
+            if eval_mode == 'gating_ensemble' and gating_has_garbage_class:
+                print("Using garbage class probability for open-set evaluation.")
+                prob_of_garbage = all_probs[:, -1]
+                confidences = 1 - prob_of_garbage
+            else:
+                print("Using max softmax probability for open-set evaluation.")
+                confidences = np.max(all_probs, axis=1)
+
+            auroc = roc_auc_score(y_true_openset, confidences)
+            
+            fpr, tpr, thresholds = roc_curve(y_true_openset, confidences)
+            tpr_ge_95_indices = np.where(tpr >= 0.95)[0]
+            if len(tpr_ge_95_indices) > 0:
+                idx = tpr_ge_95_indices[0]
+                fpr_at_tpr95 = fpr[idx]
+            else:
+                idx = np.argmax(tpr)
+                fpr_at_tpr95 = fpr[idx] if idx < len(fpr) else np.nan
+                print(f"Warning: TPR never reached 0.95. Reporting FPR at highest TPR of {tpr[idx] if idx < len(tpr) else 'N/A'}")
+
+        print(f"AUROC: {auroc:.4f}")
+        print(f"FPR@TPR95: {fpr_at_tpr95:.4f}")
+        
+        with open(results_file, 'a') as f:
+            f.write("\n\n--- Open-Set Evaluation ---\n")
+            f.write(f"Known Classes: {known_classes}\n")
+            if unknown_classes:
+                f.write(f"Unknown Classes: {unknown_classes}\n")
+            f.write(f"AUROC: {auroc:.4f}\n")
+            f.write(f"FPR@TPR95: {fpr_at_tpr95:.4f}\n")
+
     print(f"\nResults saved to {results_file}")
 
+    # Plot and save confusion matrix
     plt.figure(figsize=(15, 12))
     tick_labels = [str(l) for l in unique_labels]
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=tick_labels, yticklabels=tick_labels)
