@@ -187,14 +187,13 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
     print(report)
     
     results_file = os.path.join(output_dir, "evaluation_summary.txt")
-    # ... (file writing remains the same) ...
     with open(results_file, 'a') as f:
-        f.write("\n\n--- Open-Set Evaluation ---")
-        f.write(f"\nKnown Classes: {known_classes}")
+        f.write("\n\n--- Open-Set Evaluation ---\n")
+        f.write(f"Known Classes: {known_classes}\n")
         if unknown_classes:
-            f.write(f"\nUnknown Classes: {unknown_classes}")
-        f.write(f"\nAUROC: {auroc:.4f}")
-        f.write(f"\nFPR@TPR95: {fpr_at_tpr95:.4f}")
+            f.write(f"Unknown Classes: {unknown_classes}\n")
+        f.write(f"AUROC: {auroc:.4f}\n")
+        f.write(f"FPR@TPR95: {fpr_at_tpr95:.4f}\n")
     
     print(f"\nResults saved to {results_file}")
 
