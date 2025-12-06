@@ -431,6 +431,25 @@ def create_train_test_for_task(
         save_train(train_df_remapped, data_dir_path)
         save_test(test_df, data_dir_path)
         print("-------------------------------------------------------")
+    elif experiment_type == "select_classes":
+        if not minority_classes:
+            raise ValueError("The --minority-classes argument is required for experiment_type 'select_classes'")
+        
+        task_df = df.filter(col(label_col).isNotNull()).selectExpr(
+            "feature", f"{label_col} as label"
+        )
+        
+        # Filter to only include the specified classes
+        filtered_df = task_df.filter(col('label').isin(list(minority_classes)))
+
+        print(f"--- Creating dataset with only selected classes: {minority_classes} ---")
+        # Save the entire filtered dataframe as the training set, without splitting
+        save_train(filtered_df, data_dir_path)
+        
+        # Save an empty test set to maintain directory structure
+        empty_test_df = filtered_df.limit(0)
+        save_test(empty_test_df, data_dir_path)
+        print("----------------------------------------------------------")
 
 
 def print_df_label_distribution(spark, path):
@@ -468,7 +487,7 @@ def print_df_label_distribution(spark, path):
 )
 @click.option(
     "--experiment_type",
-    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_incremental_new", "imbalanced", "open_set_hold_out"], case_sensitive=False),
+    type=click.Choice(["exp1", "exp2", "exp3", "exp8_majority", "exp8_minority", "exp_open_set", "exp_open_set_majority", "exp_open_set_minority", "exp_ incremental_new", "imbalanced", "open_set_hold_out", "select_classes"], case_sensitive=False),
     default="exp1",
     help="Type of experiment to generate data for.",
 )

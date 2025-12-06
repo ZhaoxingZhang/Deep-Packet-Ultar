@@ -140,7 +140,7 @@ for EXCLUDED_CLASS in "${CLASSES_TO_EXCLUDE[@]}"; do
         python -u create_train_test_set.py \
             --source "${SOURCE_DATA_DIR}" \
             --target "${FOLD_DATA_DIR}/unknown" \
-            --experiment_type minority_only \
+            --experiment_type select_classes \
             --minority-classes "${EXCLUDED_CLASS}" \
             --task-type traffic \
             --fraction 0.01 \
