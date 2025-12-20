@@ -64,8 +64,8 @@ python -u train_gating_network.py \
     --minority_model_type cnn \
     ${MINORITY_CLASSES_ARGS_UNDERSCORE} \
     --output_path "${GATING_MODEL_PATH}" \
-    --epochs 100 \
-    --lr 0.001 \
+    --epochs 300 \
+    --lr 0.0003 \
     --train_on_val \
     --validation_split 0.1
 
