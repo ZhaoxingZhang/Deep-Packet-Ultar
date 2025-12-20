@@ -65,9 +65,9 @@ python -u train_gating_network.py \
     ${MINORITY_CLASSES_ARGS_UNDERSCORE} \
     --output_path "${GATING_MODEL_PATH}" \
     --epochs 300 \
-    --lr 0.0003 \
+    --lr 0.0005 \
     --train_on_val \
-    --validation_split 0.1
+    --validation_split 0.15
 
 # --- 4. Evaluate GEE (CNN) Model ---
 echo "--> Step 4: Evaluating full GEE (CNN) architecture..."
