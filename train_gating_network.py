@@ -12,9 +12,11 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from ml.model import ResNet, GatingNetwork, CNN
+from pytorch_lightning.utilities.seed import seed_everything
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
-def load_feature_data(data_path):
-    """Loads the raw feature data (for the main models)."""
+def load_feature_data(data_path, validation_split=0.0, seed=9876, train_on_val=False):
+    """Loads the raw feature data and optionally splits it."""
     table = pq.read_table(data_path)
     df = table.to_pandas()
     
@@ -25,7 +27,18 @@ def load_feature_data(data_path):
     if len(features.shape) == 2:
         features = features.unsqueeze(1)
         
-    dataset = TensorDataset(features, labels)
+    full_dataset = TensorDataset(features, labels)
+    
+    if validation_split > 0:
+        seed_everything(seed)
+        val_size = int(len(full_dataset) * validation_split)
+        train_size = len(full_dataset) - val_size
+        train_ds, val_ds = random_split(full_dataset, [train_size, val_size])
+        dataset = val_ds if train_on_val else train_ds
+        print(f"  -> Split data: total={len(full_dataset)}, used={'val' if train_on_val else 'train'}={len(dataset)}")
+    else:
+        dataset = full_dataset
+        
     dataloader = DataLoader(dataset, batch_size=256, shuffle=False)
     return dataloader
 
@@ -37,7 +50,6 @@ def generate_gating_inputs(feature_dataloader, baseline_model, minority_model, m
         - A tensor of concatenated probability vectors.
         - A tensor of original labels.
     """
-    num_total_classes = baseline_model.out.out_features
     expert_idx_to_original_label = {i: label for i, label in enumerate(minority_classes)}
     
     gating_inputs = []
@@ -82,6 +94,9 @@ def generate_gating_inputs(feature_dataloader, baseline_model, minority_model, m
 @click.option("--lr", type=float, default=0.001, help="Learning rate for the Gating Network.")
 @click.option("--use-garbage-class", is_flag=True, help="Enable training with a garbage class for open-set.")
 @click.option("--unknown-class-data-path", default=None, help="Path to the data for the UNKNOWN/GARBAGE class. Required if --use-garbage-class is set.")
+@click.option("--validation_split", type=float, default=0.1, help="Validation split used for the models.")
+@click.option("--seed", type=int, default=9876, help="Random seed for splitting.")
+@click.option("--train_on_val", is_flag=True, help="Train the gating network only on the validation split of the training data.")
 def train_gating_network(
     train_data_path,
     baseline_model_path,
@@ -93,7 +108,10 @@ def train_gating_network(
     epochs,
     lr,
     use_garbage_class,
-    unknown_class_data_path
+    unknown_class_data_path,
+    validation_split,
+    seed,
+    train_on_val
 ):
     """
     Trains a Gating Network to combine the outputs of a baseline and a minority expert model.
@@ -130,7 +148,7 @@ def train_gating_network(
 
     # --- 2. Prepare Data for Gating Network Training ---
     print(f"Loading KNOWN class data from {train_data_path}...")
-    known_feature_dataloader = load_feature_data(train_data_path)
+    known_feature_dataloader = load_feature_data(train_data_path, validation_split=validation_split, seed=seed, train_on_val=train_on_val)
     gating_known_inputs, gating_known_labels = generate_gating_inputs(
         known_feature_dataloader, baseline_model, minority_model, minority_classes, device
     )
@@ -140,6 +158,7 @@ def train_gating_network(
             raise ValueError("--unknown-class-data-path must be provided when --use-garbage-class is enabled.")
         
         print(f"Loading UNKNOWN class data from {unknown_class_data_path}...")
+        # For garbage data, we typically use the whole set if it's already a separate "unknown" set
         unknown_feature_dataloader = load_feature_data(unknown_class_data_path)
         gating_garbage_inputs, _ = generate_gating_inputs(
             unknown_feature_dataloader, baseline_model, minority_model, minority_classes, device
@@ -158,23 +177,29 @@ def train_gating_network(
 
     full_gating_dataset = TensorDataset(gating_train_inputs, gating_train_labels)
     
-    # --- 3. Create Training and Validation Sets ---
-    val_split = 0.1
-    val_size = int(len(full_gating_dataset) * val_split)
-    train_size = len(full_gating_dataset) - val_size
-    train_dataset, val_dataset = torch.utils.data.random_split(full_gating_dataset, [train_size, val_size])
+    # --- 3. Create Training and Validation Sets for the Gating Network itself ---
+    # We still split the gating dataset to monitor its own training
+    gating_val_split = 0.1
+    gating_val_size = int(len(full_gating_dataset) * gating_val_split)
+    gating_train_size = len(full_gating_dataset) - gating_val_size
+    gating_train_dataset, gating_val_dataset = torch.utils.data.random_split(full_gating_dataset, [gating_train_size, gating_val_size])
 
-    train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=256, shuffle=False)
-    print(f"Created training dataset with {len(train_dataset)} samples and validation dataset with {len(val_dataset)} samples.")
+    train_dataloader = DataLoader(gating_train_dataset, batch_size=64, shuffle=True)
+    val_dataloader = DataLoader(gating_val_dataset, batch_size=256, shuffle=False)
+    print(f"Created gating training dataset with {len(gating_train_dataset)} samples and validation dataset with {len(gating_val_dataset)} samples.")
 
     # --- 4. Train Gating Network ---
     num_output_classes = num_known_classes + 1 if use_garbage_class else num_known_classes
     
-    train_labels = train_dataset.dataset.tensors[1][train_dataset.indices]
+    train_labels = gating_train_dataset.dataset.tensors[1][gating_train_dataset.indices]
     class_counts_full = torch.bincount(train_labels, minlength=num_output_classes)
     
-    class_weights = len(train_labels) / (num_output_classes * (class_counts_full.float() + 1e-6))
+    # Improved class weights: only weight classes that are present
+    active_classes = (class_counts_full > 0).sum()
+    class_weights = torch.zeros_like(class_counts_full, dtype=torch.float)
+    if active_classes > 0:
+        class_weights[class_counts_full > 0] = len(train_labels) / (active_classes * class_counts_full[class_counts_full > 0].float())
+    
     class_weights = class_weights.to(device)
     print(f"Calculated class weights: {class_weights}")
 
@@ -182,7 +207,7 @@ def train_gating_network(
         num_classes=num_known_classes, 
         use_garbage_class=use_garbage_class
     ).to(device)
-    optimizer = torch.optim.Adam(gating_network.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(gating_network.parameters(), lr=lr, weight_decay=1e-4)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     best_val_loss = float('inf')

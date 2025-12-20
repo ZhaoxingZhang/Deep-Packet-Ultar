@@ -187,3 +187,5 @@ python evaluation.py \
 --minority_classes 5 \
 --minority_classes 7 \
 --gating_network_path model/gating_network_cross_entropy_loss_1115.pth
+
+scp -P 36047 'featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/log/*' log/
