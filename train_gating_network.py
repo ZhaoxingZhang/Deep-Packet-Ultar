@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ml.model import ResNet, GatingNetwork
+from ml.model import ResNet, GatingNetwork, CNN
 
 def load_feature_data(data_path):
     """Loads the raw feature data (for the main models)."""
@@ -74,13 +74,27 @@ def generate_gating_inputs(feature_dataloader, baseline_model, minority_model, m
 @click.option("--train_data_path", required=True, help="Path to the training data parquet file for KNOWN classes.")
 @click.option("--baseline_model_path", required=True, help="Path to the pre-trained baseline model.")
 @click.option("--minority_model_path", required=True, help="Path to the pre-trained minority expert model.")
+@click.option("--baseline_model_type", type=click.Choice(['resnet', 'cnn']), default='resnet', help="Type of the baseline model.")
+@click.option("--minority_model_type", type=click.Choice(['resnet', 'cnn']), default='resnet', help="Type of the minority expert model.")
 @click.option("--minority_classes", type=int, multiple=True, required=True, help="The original labels of the minority classes.")
 @click.option("--output_path", required=True, help="Path to save the trained Gating Network.")
 @click.option("--epochs", type=int, default=10, help="Number of epochs to train the Gating Network.")
 @click.option("--lr", type=float, default=0.001, help="Learning rate for the Gating Network.")
 @click.option("--use-garbage-class", is_flag=True, help="Enable training with a garbage class for open-set.")
 @click.option("--unknown-class-data-path", default=None, help="Path to the data for the UNKNOWN/GARBAGE class. Required if --use-garbage-class is set.")
-def train_gating_network(train_data_path, baseline_model_path, minority_model_path, minority_classes, output_path, epochs, lr, use_garbage_class, unknown_class_data_path):
+def train_gating_network(
+    train_data_path,
+    baseline_model_path,
+    minority_model_path,
+    baseline_model_type,
+    minority_model_type,
+    minority_classes,
+    output_path,
+    epochs,
+    lr,
+    use_garbage_class,
+    unknown_class_data_path
+):
     """
     Trains a Gating Network to combine the outputs of a baseline and a minority expert model.
     Can optionally include a 'garbage' class for open-set recognition training.
@@ -92,14 +106,22 @@ def train_gating_network(train_data_path, baseline_model_path, minority_model_pa
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    print(f"Loading baseline model from {baseline_model_path}...")
-    baseline_model = ResNet.load_from_checkpoint(baseline_model_path).to(device)
+    def load_model(model_type, model_path):
+        if model_type == 'resnet':
+            return ResNet.load_from_checkpoint(model_path)
+        elif model_type == 'cnn':
+            return CNN.load_from_checkpoint(model_path)
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
+
+    print(f"Loading baseline {baseline_model_type} model from {baseline_model_path}...")
+    baseline_model = load_model(baseline_model_type, baseline_model_path).to(device)
     baseline_model.eval()
     for param in baseline_model.parameters():
         param.requires_grad = False
 
-    print(f"Loading minority expert model from {minority_model_path}...")
-    minority_model = ResNet.load_from_checkpoint(minority_model_path).to(device)
+    print(f"Loading minority expert {minority_model_type} model from {minority_model_path}...")
+    minority_model = load_model(minority_model_type, minority_model_path).to(device)
     minority_model.eval()
     for param in minority_model.parameters():
         param.requires_grad = False

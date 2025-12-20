@@ -161,7 +161,7 @@ application_classification_cnn_logs/
 agent/
 evaluation_results/
 traffic_classification_resnet_logs/
-
+traffic_classification_cnn_logs/
 # transfer file
 transfer.sh
 

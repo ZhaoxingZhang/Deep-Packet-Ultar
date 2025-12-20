@@ -53,6 +53,8 @@ def get_output_dir_from_model_path(model_path):
 @click.option("--baseline_weight", type=float, default=0.5, help="Weight for the baseline model.")
 @click.option("--minority_weight", type=float, default=0.5, help="Weight for the minority expert model.")
 # Options for 'gating_ensemble' mode
+@click.option("--baseline_model_type", type=click.Choice(['resnet', 'cnn']), default='resnet', help="Type of the baseline model for GEE.")
+@click.option("--minority_model_type", type=click.Choice(['resnet', 'cnn']), default='resnet', help="Type of the minority expert model for GEE.")
 @click.option("--gating_network_path", help="Path to the pre-trained Gating Network.")
 @click.option("--gating-has-garbage-class", is_flag=True, help="Flag if the gating network was trained with a garbage class.")
 # Options for open-set evaluation
@@ -63,6 +65,7 @@ def get_output_dir_from_model_path(model_path):
 def evaluate(data_path, output_dir, eval_mode, model_path, model_type, 
              baseline_model_path, minority_model_path, minority_classes, 
              baseline_weight, minority_weight,
+             baseline_model_type, minority_model_type,
              gating_network_path, gating_has_garbage_class,
              open_set_eval, known_classes, unknown_classes, label_map):
     """Evaluates a trained model or an ensemble of models on the given test set."""
@@ -119,14 +122,20 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         if gating_has_garbage_class:
             print("Note: Gating network is configured with a garbage class.")
 
-        print(f"Loading baseline model from {baseline_model_path}...")
-        baseline_model = ResNet.load_from_checkpoint(baseline_model_path, map_location=device)
-        baseline_model.to(device)
+        def load_model(model_type, model_path):
+            if model_type == 'resnet':
+                return ResNet.load_from_checkpoint(model_path, map_location=device)
+            elif model_type == 'cnn':
+                return CNN.load_from_checkpoint(model_path, map_location=device)
+            else:
+                raise ValueError(f"Unknown model type: {model_type}")
+
+        print(f"Loading baseline {baseline_model_type} model from {baseline_model_path}...")
+        baseline_model = load_model(baseline_model_type, baseline_model_path).to(device)
         baseline_model.eval()
 
-        print(f"Loading minority expert model from {minority_model_path}...")
-        minority_model = ResNet.load_from_checkpoint(minority_model_path, map_location=device)
-        minority_model.to(device)
+        print(f"Loading minority expert {minority_model_type} model from {minority_model_path}...")
+        minority_model = load_model(minority_model_type, minority_model_path).to(device)
         minority_model.eval()
 
         num_known_classes = baseline_model.hparams.output_dim
