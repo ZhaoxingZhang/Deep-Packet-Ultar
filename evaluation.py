@@ -16,7 +16,7 @@ from ruamel.yaml import YAML
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ml.model import ResNet, GatingNetwork
+from ml.model import ResNet, GatingNetwork, CNN
 
 def load_data(data_path):
     table = pq.read_table(data_path)
@@ -45,7 +45,7 @@ def get_output_dir_from_model_path(model_path):
 @click.option("--eval-mode", type=click.Choice(['standard', 'ensemble', 'gating_ensemble']), default='standard', help="Evaluation mode.")
 # Options for 'standard' mode
 @click.option("--model_path", help="Path to the single model checkpoint for standard evaluation.")
-@click.option("--model_type", type=click.Choice(['resnet']), help="Type of model for standard evaluation.")
+@click.option("--model_type", type=click.Choice(['resnet', 'cnn']), help="Type of model for standard evaluation.")
 # Options for 'ensemble' mode
 @click.option("--baseline_model_path", help="Path to the baseline model for ensemble evaluation.")
 @click.option("--minority_model_path", help="Path to the minority expert model for ensemble evaluation.")
@@ -85,6 +85,8 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
         print(f"Loading {model_type} model from {model_path}...")
         if model_type == 'resnet':
             model = ResNet.load_from_checkpoint(model_path, map_location=device)
+        elif model_type == 'cnn':
+            model = CNN.load_from_checkpoint(model_path, map_location=device)
         else:
             raise ValueError(f"Unknown model type for standard evaluation: {model_type}")
         

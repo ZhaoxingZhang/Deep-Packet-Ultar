@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore", "pkg_resources is deprecated")
 import click
 import os
+import pyarrow.parquet as pq
 
 from ml.utils import (
     train_application_classification_cnn_model,
@@ -23,13 +24,47 @@ from ml.utils import (
     help='classification task. Option: "app" or "traffic"',
     required=True,
 )
-def main(data_path, model_path, task):
+@click.option(
+    "--validation_split",
+    default=0.1,
+    help="Fraction of the training data to use for validation.",
+    type=float,
+)
+@click.option(
+    "--sampling_strategy",
+    default='random',
+    help="The sampling strategy to use.",
+    type=click.Choice(['random', 'class_aware']),
+)
+def main(data_path, model_path, task, validation_split, sampling_strategy):
     data_path = os.path.abspath(data_path)
     model_path = os.path.abspath(model_path)
     if task == "app":
-        train_application_classification_cnn_model(data_path, model_path)
+        # Calculate output_dim from the training data
+        train_parquet_path = os.path.join(data_path, 'train.parquet')
+        table = pq.read_table(train_parquet_path)
+        output_dim = table['label'].to_pandas().max() + 1
+        print(f"Dynamically determined output_dim: {output_dim}")
+
+        train_application_classification_cnn_model(
+            data_path, 
+            model_path, 
+            output_dim=output_dim, 
+            validation_split=validation_split, 
+            sampling_strategy=sampling_strategy
+        )
     elif task == "traffic":
-        train_traffic_classification_cnn_model(data_path, model_path)
+        # Dynamically determine output_dim from the training data
+        table = pq.read_table(data_path)
+        output_dim = table['label'].to_pandas().max() + 1
+        print(f"Dynamically determined output_dim for traffic task: {output_dim}")
+
+        train_traffic_classification_cnn_model(
+            data_path, 
+            model_path, 
+            validation_split=validation_split, 
+            output_dim=output_dim
+        )
     else:
         exit("Not Support")
 

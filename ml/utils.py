@@ -23,6 +23,8 @@ def train_cnn(
     model_path,
     signal_length,
     logger,
+    validation_split=0.1,
+    sampling_strategy='random',
 ):
     # prepare dir for model path
     if model_path:
@@ -31,6 +33,15 @@ def train_cnn(
 
     # seed everything
     seed_everything(seed=9876, workers=True)
+
+    # Configure ModelCheckpoint to save the best model based on val_loss
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_loss',
+        dirpath=str(model_path.parent.absolute()),
+        filename=model_path.name,
+        save_top_k=1,
+        mode='min',
+    )
 
     model = CNN(
         c1_kernel_size=c1_kernel_size,
@@ -42,6 +53,8 @@ def train_cnn(
         output_dim=output_dim,
         data_path=data_path,
         signal_length=signal_length,
+        validation_split=validation_split,
+        sampling_strategy=sampling_strategy,
     ).float()
     trainer = Trainer(
         val_check_interval=1.0,
@@ -51,14 +64,14 @@ def train_cnn(
         logger=logger,
         callbacks=[
             EarlyStopping(
-                monitor="training_loss", mode="min", check_on_train_epoch_end=True
-            )
+                monitor="val_loss", mode="min", patience=20
+            ),
+            checkpoint_callback
         ],
     )
     trainer.fit(model)
 
-    # save model
-    trainer.save_checkpoint(str(model_path.absolute()))
+    # The ModelCheckpoint callback now handles saving the best model automatically.
 
 
 def train_resnet(
@@ -123,7 +136,7 @@ def train_resnet(
     # The ModelCheckpoint callback now handles saving the best model automatically.
 
 
-def train_application_classification_cnn_model(data_path, model_path):
+def train_application_classification_cnn_model(data_path, model_path, output_dim=17, validation_split=0.1, sampling_strategy='random'):
     logger = TensorBoardLogger(
         "application_classification_cnn_logs", "application_classification_cnn"
     )
@@ -134,12 +147,14 @@ def train_application_classification_cnn_model(data_path, model_path):
         c2_kernel_size=5,
         c2_output_dim=200,
         c2_stride=1,
-        output_dim=17,
+        output_dim=output_dim,
         data_path=data_path,
         epoch=20,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
+        validation_split=validation_split,
+        sampling_strategy=sampling_strategy,
     )
 
 
@@ -164,7 +179,7 @@ def train_application_classification_resnet_model(data_path, model_path, output_
     )
 
 
-def train_traffic_classification_cnn_model(data_path, model_path):
+def train_traffic_classification_cnn_model(data_path, model_path, output_dim=12, validation_split=0.1):
     logger = TensorBoardLogger(
         "traffic_classification_cnn_logs", "traffic_classification_cnn"
     )
@@ -175,12 +190,13 @@ def train_traffic_classification_cnn_model(data_path, model_path):
         c2_kernel_size=4,
         c2_output_dim=200,
         c2_stride=3,
-        output_dim=12,
+        output_dim=output_dim,
         data_path=data_path,
         epoch=20,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
+        validation_split=validation_split,
     )
 
 

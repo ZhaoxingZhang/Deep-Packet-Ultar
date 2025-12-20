@@ -29,6 +29,8 @@ class CNN(LightningModule):
         output_dim,
         data_path,
         signal_length,
+        validation_split=0.1,
+        sampling_strategy='random',
     ):
         super().__init__()
         # save parameters to checkpoint
@@ -103,42 +105,110 @@ class CNN(LightningModule):
 
         return x
 
-    def train_dataloader(self):
+    def setup(self, stage=None):
+        # This is called by the Trainer before fitting
         import os
         import torch
         import pyarrow.parquet as pq
-        from torch.utils.data import TensorDataset
+        from torch.utils.data import TensorDataset, random_split
+        from collections import Counter
 
-        train_path = os.path.join(self.hparams.data_path, 'train.parquet')
+        train_path = self.hparams.data_path
+        # User's suggested fix: if data_path already ends with 'train.parquet', use it directly; otherwise, append it.
+        if not train_path.endswith('train.parquet'):
+            train_path = os.path.join(train_path, 'train.parquet')
+            
         table = pq.read_table(train_path)
         df = table.to_pandas()
         
         features = torch.from_numpy(np.array(df['feature'].tolist(), dtype=np.float32))
         labels = torch.from_numpy(np.array(df['label'].tolist(), dtype=np.int64))
         
-        # The CNN model expects a channel dimension, so we add it.
         if len(features.shape) == 2:
             features = features.unsqueeze(1)
 
-        dataset = TensorDataset(features, labels)
+        full_dataset = TensorDataset(features, labels)
+        
+        # Split dataset
+        val_size = int(len(full_dataset) * self.hparams.validation_split)
+        train_size = len(full_dataset) - val_size
+        self.train_dataset, self.val_dataset = random_split(full_dataset, [train_size, val_size])
 
+        # Calculate weights for class-aware sampling
+        if self.hparams.sampling_strategy == 'class_aware':
+            train_labels = self.train_dataset.dataset.tensors[1][self.train_dataset.indices]
+            class_counts = Counter(train_labels.tolist())
+            
+            # Compute weight for each sample. The weight is the inverse of its class frequency.
+            class_weights = {c: 1.0 / count for c, count in class_counts.items()}
+            self.train_sample_weights = torch.tensor([class_weights[label.item()] for label in train_labels], dtype=torch.float)
+        else:
+            self.train_sample_weights = None
+
+    def train_dataloader(self):
         try:
             num_workers = multiprocessing.cpu_count()
         except:
             num_workers = 1
+
+        sampler = None
+        shuffle = True
+        if self.hparams.sampling_strategy == 'class_aware' and self.train_sample_weights is not None:
+            sampler = WeightedRandomSampler(
+                self.train_sample_weights,
+                num_samples=len(self.train_sample_weights),
+                replacement=True
+            )
+            shuffle = False # Sampler is mutually exclusive with shuffle
         
-        # We no longer need a collate_fn because TensorDataset handles it.
-        dataloader = DataLoader(
-            dataset,
+        return DataLoader(
+            self.train_dataset,
             batch_size=16,
             num_workers=num_workers,
-            shuffle=True,
+            sampler=sampler,
+            shuffle=shuffle,
         )
 
-        return dataloader
+    def val_dataloader(self):
+        try:
+            num_workers = multiprocessing.cpu_count()
+        except:
+            num_workers = 1
+
+        return DataLoader(
+            self.val_dataset,
+            batch_size=16,
+            num_workers=num_workers,
+            shuffle=False,
+        )
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        
+        preds = torch.argmax(y_hat, dim=1)
+        acc = torch.tensor(torch.sum(preds == y).item() / (len(y) * 1.0))
+        
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val_acc", acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters())
+        optimizer = torch.optim.Adam(self.parameters())
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            'min',
+            patience=3, # Scheduler patience is different from EarlyStopping patience
+            verbose=True
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+            },
+        }
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -153,9 +223,7 @@ class CNN(LightningModule):
             on_step=True,
             on_epoch=True,
         )
-        loss = {"loss": entropy}
-
-        return loss
+        return entropy
 
 
 class CustomConv1d(nn.Module):
