@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Set JAVA_HOME to ensure PySpark can find the Java installation
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+
 echo "================================================================="
 echo "--- Running CNN Baseline Incremental Learning Evaluation ---"
 echo "================================================================="

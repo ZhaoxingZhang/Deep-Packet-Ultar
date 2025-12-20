@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# Try to set JAVA_HOME dynamically if not set (for Spark)
+if [ -z "$JAVA_HOME" ]; then
+    if [ -x "/usr/libexec/java_home" ]; then
+        export JAVA_HOME=$(/usr/libexec/java_home)
+    elif [ -d "/usr/lib/jvm/java-11-openjdk-amd64" ]; then
+        export JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
+    fi
+fi
+
 echo "================================================================="
 echo "--- Running 6-Fold CNN Baseline Open-Set Recognition Evaluation ---"
 echo "================================================================="
@@ -8,7 +17,8 @@ echo "================================================================="
 # --- Configuration ---
 ALL_CLASSES=(5 6 7 8 9 10)
 SOURCE_DATA_DIR="processed_data/vpn"
-BASE_DATA_DIR="train_test_data/open_set_cnn_baseline" # New directory for CNN baseline data
+LOCAL_BASE_DATA_DIR="train_test_data/open_set_cnn_baseline"
+SHARED_BASE_DATA_DIR="train_test_data/open_set_gee"
 BASE_MODEL_DIR="model/open_set_cnn_baseline"
 BASE_EVAL_DIR="evaluation_results/open_set_cnn_baseline"
 
@@ -21,36 +31,46 @@ for EXCLUDED_CLASS in "${ALL_CLASSES[@]}"; do
     echo "--- Fold: Excluded Class ${EXCLUDED_CLASS} as Unknown ---"
     echo "================================================================="
 
-    # --- Define Fold-Specific Variables ---
-    FOLD_DATA_DIR="${BASE_DATA_DIR}/exp_exclude_${EXCLUDED_CLASS}"
+    # Define paths
+    # LOCAL path for this fold
+    LOCAL_FOLD_DATA_DIR="${LOCAL_BASE_DATA_DIR}/exp_exclude_${EXCLUDED_CLASS}/main/traffic_classification"
+    # SHARED path from the GEE experiments
+    SHARED_FOLD_DATA_DIR="${SHARED_BASE_DATA_DIR}/exp_exclude_${EXCLUDED_CLASS}/main/traffic_classification"
+    
     FOLD_MODEL_DIR="${BASE_MODEL_DIR}/exclude_${EXCLUDED_CLASS}"
     FOLD_EVAL_DIR="${BASE_EVAL_DIR}/exclude_${EXCLUDED_CLASS}"
-
-    DATA_PATH_TRAIN="${FOLD_DATA_DIR}/traffic_classification/train.parquet"
-    DATA_PATH_TEST="${FOLD_DATA_DIR}/traffic_classification/test.parquet"
     
     MODEL_NAME="baseline_exclude_${EXCLUDED_CLASS}.pt"
     MODEL_PATH_BASE="${FOLD_MODEL_DIR}/${MODEL_NAME}"
     FINAL_MODEL_PATH="${MODEL_PATH_BASE}.ckpt"
 
-    mkdir -p "${FOLD_DATA_DIR}" "${FOLD_MODEL_DIR}" "${FOLD_EVAL_DIR}"
+    mkdir -p "${FOLD_MODEL_DIR}" "${FOLD_EVAL_DIR}"
 
-    # --- 1. Data Generation (if needed) ---
-    echo "--> Step 1: Generating dataset..."
-    if [ -f "${DATA_PATH_TRAIN}/_SUCCESS" ]; then
-        echo "    - Dataset already exists. Skipping generation."
+    # --- Step 1: Data Strategy ---
+    # Logic: Prefer local, then shared, then generate local
+    if [ -d "${LOCAL_FOLD_DATA_DIR}/train.parquet" ]; then
+        echo "--> Step 1: Using local dataset at ${LOCAL_FOLD_DATA_DIR}"
+        DATA_PATH_TRAIN="${LOCAL_FOLD_DATA_DIR}/train.parquet"
+        DATA_PATH_TEST="${LOCAL_FOLD_DATA_DIR}/test.parquet"
+    elif [ -d "${SHARED_FOLD_DATA_DIR}/train.parquet" ]; then
+        echo "--> Step 1: Found shared dataset at ${SHARED_FOLD_DATA_DIR}. Using it."
+        DATA_PATH_TRAIN="${SHARED_FOLD_DATA_DIR}/train.parquet"
+        DATA_PATH_TEST="${SHARED_FOLD_DATA_DIR}/test.parquet"
     else
+        echo "--> Step 1: No existing data found. Generating local dataset..."
         python -u create_train_test_set.py \
             -s "${SOURCE_DATA_DIR}" \
-            -t "${FOLD_DATA_DIR}" \
+            -t "${LOCAL_BASE_DATA_DIR}/exp_exclude_${EXCLUDED_CLASS}/main" \
             --experiment_type open_set_hold_out \
             --task-type traffic \
             --exclude-classes "${EXCLUDED_CLASS}" \
             --fraction 0.01 \
             --batch_size 50
+        DATA_PATH_TRAIN="${LOCAL_FOLD_DATA_DIR}/train.parquet"
+        DATA_PATH_TEST="${LOCAL_FOLD_DATA_DIR}/test.parquet"
     fi
 
-    # --- 2. Train CNN Baseline Model ---
+    # --- Step 2: Train CNN Baseline Model ---
     echo "--> Step 2: Training CNN baseline model..."
     if [ ! -f "${FINAL_MODEL_PATH}" ]; then
         python -u train_cnn.py \
@@ -61,14 +81,14 @@ for EXCLUDED_CLASS in "${ALL_CLASSES[@]}"; do
         echo "    - Model already exists. Skipping training."
     fi
 
-    # --- 3. Evaluate CNN Baseline Model (Open-Set) ---
+    # --- Step 3: Evaluate CNN Baseline Model (Open-Set) ---
     echo "--> Step 3: Evaluating CNN model for open-set performance..."
     KNOWN_CLASSES_ARGS=""
     LABEL_MAP_STRING=""
     NEW_LABEL_IDX=0
     for C in "${ALL_CLASSES[@]}"; do
         if [ "$C" != "$EXCLUDED_CLASS" ]; then
-            KNOWN_CLASSES_ARGS="$KNOWN_CLASSES_ARGS --known-classes $C"
+            KNOWN_CLASSES_ARGS="${KNOWN_CLASSES_ARGS} --known-classes $C"
             if [ -z "$LABEL_MAP_STRING" ]; then
                 LABEL_MAP_STRING="${NEW_LABEL_IDX}:${C}"
             else
