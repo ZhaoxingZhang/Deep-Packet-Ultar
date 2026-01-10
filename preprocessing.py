@@ -120,9 +120,15 @@ def transform_pcap(path, output_path: Optional[Path] = None, output_batch_size=1
         arr = transform_packet(packet, mask_ports_enabled=mask_ports_enabled)
         if arr is not None:
             # get labels for app identification
-            prefix = path.name.split(".")[0].lower()
-            app_label = PREFIX_TO_APP_ID.get(prefix)
-            traffic_label = PREFIX_TO_TRAFFIC_ID.get(prefix)
+            parent_dir = path.parent.name
+            grandparent_dir = path.parent.parent.name
+            if grandparent_dir in ['qq', 'weixin']:
+                key = f"{grandparent_dir}_{parent_dir}".lower()
+            else:
+                key = path.name.split(".")[0].lower()
+            
+            app_label = PREFIX_TO_APP_ID.get(key)
+            traffic_label = PREFIX_TO_TRAFFIC_ID.get(key)
             row = {
                 "app_label": app_label,
                 "traffic_label": traffic_label,
@@ -179,18 +185,24 @@ def main(source, target, njob, resume, mask_ports):
     target_dir_path.mkdir(parents=True, exist_ok=True)
     
     # 获取所有需要处理的文件
-    pcap_files = sorted(data_dir_path.iterdir())
+    pcap_files = sorted(list(data_dir_path.rglob("*.pcap")))
     
     if resume:
         # 过滤掉已经处理完成的文件
         files_to_process = []
         for pcap_path in pcap_files:
-            output_path = target_dir_path / (pcap_path.name + ".transformed")
+            # Create a corresponding output path structure
+            relative_path = pcap_path.relative_to(data_dir_path)
+            output_path = target_dir_path / relative_path.with_name(pcap_path.name + ".transformed")
+            # Ensure parent directory exists for output
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
             success_file = Path(str(output_path.absolute()) + "_SUCCESS")
             if not success_file.exists():
-                files_to_process.append(pcap_path)
+                files_to_process.append((pcap_path, output_path))
             else:
-                print(f"跳过已完成的文件: {pcap_path.name}")
+                pass
+                # print(f"跳过已完成的文件: {pcap_path.name}")
         
         print(f"总共 {len(pcap_files)} 个文件，其中 {len(files_to_process)} 个需要处理")
         
@@ -198,22 +210,27 @@ def main(source, target, njob, resume, mask_ports):
             print("所有文件都已处理完成！")
             return
     else:
-        files_to_process = pcap_files
+        files_to_process = []
+        for pcap_path in pcap_files:
+            relative_path = pcap_path.relative_to(data_dir_path)
+            output_path = target_dir_path / relative_path.with_name(pcap_path.name + ".transformed")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            files_to_process.append((pcap_path, output_path))
         print(f"将处理所有 {len(files_to_process)} 个文件")
     
     if njob == 1:
-        for pcap_path in files_to_process:
+        for pcap_path, output_path in files_to_process:
             transform_pcap(
-                pcap_path, target_dir_path / (pcap_path.name + ".transformed"),
+                pcap_path, output_path,
                 mask_ports_enabled=mask_ports
             )
     else:
         Parallel(n_jobs=njob, verbose=10)(
             delayed(transform_pcap)(
-                pcap_path, target_dir_path / (pcap_path.name + ".transformed"),
+                pcap_path, output_path,
                 mask_ports_enabled=mask_ports
             )
-            for pcap_path in files_to_process
+            for pcap_path, output_path in files_to_process
         )
 
 

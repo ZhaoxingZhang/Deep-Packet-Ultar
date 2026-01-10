@@ -49,7 +49,8 @@ def main(data_path, model_path, task, validation_split, sampling_strategy):
     elif task == "traffic":
         # Dynamically determine output_dim from the training data
         # The data_path is expected to be the path to the train.parquet directory.
-        table = pq.read_table(data_path)
+        train_parquet_path = os.path.join(data_path, 'train.parquet')
+        table = pq.read_table(train_parquet_path)
         output_dim = table['label'].to_pandas().max() + 1
         print(f"Dynamically determined output_dim for traffic task: {output_dim}")
 

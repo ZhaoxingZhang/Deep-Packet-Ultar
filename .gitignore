@@ -150,6 +150,7 @@ cython_debug/
 data/
 processed_data/
 train_test_data/
+datasets/
 
 # model file
 model/

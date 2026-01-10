@@ -133,6 +133,18 @@ PREFIX_TO_APP_ID = {
     "youtube5": 14,
     "youtube6": 14,
     "youtubehtml5_1": 14,
+    # QQ
+    "qq_sendaudio": 15,
+    "qq_sendimage": 15,
+    "qq_sendtext": 15,
+    "qq_sharelocationonce": 15,
+    "qq_transferfile": 15,
+    # Weixin
+    "weixin_sendaudio": 16,
+    "weixin_sendimage": 16,
+    "weixin_sendtext": 16,
+    "weixin_sharelocationonce": 16,
+    "weixin_transferfile": 16,
 }
 
 ID_TO_APP = {
@@ -151,6 +163,8 @@ ID_TO_APP = {
     12: "Vimeo",
     13: "Voipbuster",
     14: "Youtube",
+    15: "QQ",
+    16: "Weixin",
 }
 
 # for traffic identification
@@ -176,6 +190,10 @@ PREFIX_TO_TRAFFIC_ID = {
     "icqchat2": 0,
     "skype_chat1a": 0,
     "skype_chat1b": 0,
+    "qq_sendtext": 0,
+    "qq_sharelocationonce": 0,
+    "weixin_sendtext": 0,
+    "weixin_sharelocationonce": 0,
     # Email
     "email1a": 1,
     "email1b": 1,
@@ -214,6 +232,10 @@ PREFIX_TO_TRAFFIC_ID = {
     "skype_file6": 2,
     "skype_file7": 2,
     "skype_file8": 2,
+    "qq_sendimage": 2,
+    "qq_transferfile": 2,
+    "weixin_sendimage": 2,
+    "weixin_transferfile": 2,
     # Streaming
     "netflix1": 3,
     "netflix2": 3,
@@ -269,6 +291,8 @@ PREFIX_TO_TRAFFIC_ID = {
     "voipbuster3b": 4,
     "voipbuster_4a": 4,
     "voipbuster_4b": 4,
+    "qq_sendaudio": 4,
+    "weixin_sendaudio": 4,
     # VPN: Chat
     "vpn_aim_chat1a": 5,
     "vpn_aim_chat1b": 5,
