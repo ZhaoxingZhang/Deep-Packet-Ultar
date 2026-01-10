@@ -38,7 +38,7 @@ for EXCLUDED_CLASS in $ALL_CLASSES; do
             --experiment_type open_set_hold_out \
             --task-type traffic \
             --exclude-classes "${EXCLUDED_CLASS}" \
-            --fraction 1.0
+            --fraction  0.005
     fi
 
     # 2. Train Baseline ResNet

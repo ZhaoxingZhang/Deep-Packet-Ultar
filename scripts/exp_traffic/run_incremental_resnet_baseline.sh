@@ -23,7 +23,7 @@ if [ ! -f "${TARGET_DIR}/traffic_classification/train.parquet/_SUCCESS" ]; then
         -t "$TARGET_DIR" \
         --experiment_type imbalanced \
         --task-type traffic \
-        --fraction 1.0 
+        --fraction 0.005
 else
     echo "    Dataset already exists."
 fi

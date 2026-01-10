@@ -57,7 +57,7 @@ for EXCLUDED_CLASS in $ALL_CLASSES; do
             --experiment_type open_set_hold_out \
             --task-type traffic \
             --exclude-classes "${EXCLUDED_CLASS}" \
-            --fraction 1.0
+            --fraction  0.005
     fi
     
     # B) Minority
@@ -71,7 +71,7 @@ for EXCLUDED_CLASS in $ALL_CLASSES; do
             --task-type traffic \
             --exclude-classes "${EXCLUDED_CLASS}" \
             ${MINORITY_ARGS_HYPHEN} \
-            --fraction 1.0
+            --fraction  0.005
     fi
     
     # C) Garbage (The Unknown Class for Training Gate)
@@ -82,7 +82,7 @@ for EXCLUDED_CLASS in $ALL_CLASSES; do
             --experiment_type select_classes \
             --task-type traffic \
             --minority-classes "${EXCLUDED_CLASS}" \
-            --fraction 1.0
+            --fraction  0.005
     fi
 
     # 2. Train Models
