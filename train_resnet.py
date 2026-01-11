@@ -37,7 +37,13 @@ from ml.utils import (
     help="The sampling strategy to use.",
     type=click.Choice(['random', 'class_aware']),
 )
-def main(data_path, model_path, task, validation_split, sampling_strategy):
+@click.option(
+    "--epochs",
+    default=40,
+    help="Number of epochs to train.",
+    type=int,
+)
+def main(data_path, model_path, task, validation_split, sampling_strategy, epochs):
     if task == "app":
         # Calculate output_dim from the training data
         train_parquet_path = os.path.join(data_path, 'train.parquet')
@@ -45,7 +51,14 @@ def main(data_path, model_path, task, validation_split, sampling_strategy):
         output_dim = table['label'].to_pandas().max() + 1
         print(f"Dynamically determined output_dim: {output_dim}")
 
-        train_application_classification_resnet_model(data_path, model_path, output_dim=output_dim, validation_split=validation_split, sampling_strategy=sampling_strategy)
+        train_application_classification_resnet_model(
+            data_path, 
+            model_path, 
+            output_dim=output_dim, 
+            validation_split=validation_split, 
+            sampling_strategy=sampling_strategy,
+            max_epochs=epochs
+        )
     elif task == "traffic":
         # Dynamically determine output_dim from the training data
         # The data_path is expected to be the path to the train.parquet directory.
@@ -54,7 +67,13 @@ def main(data_path, model_path, task, validation_split, sampling_strategy):
         output_dim = table['label'].to_pandas().max() + 1
         print(f"Dynamically determined output_dim for traffic task: {output_dim}")
 
-        train_traffic_classification_resnet_model(data_path, model_path, validation_split=validation_split, output_dim=output_dim)
+        train_traffic_classification_resnet_model(
+            data_path, 
+            model_path, 
+            validation_split=validation_split, 
+            output_dim=output_dim,
+            max_epochs=epochs
+        )
     else:
         exit("Not Support")
 

@@ -15,8 +15,8 @@ EVAL_DIR="evaluation_results/exp_traffic/openset/baseline_resnet"
 
 mkdir -p "$BASE_DIR" "$MODEL_DIR" "$EVAL_DIR"
 
-aurocs=()
-fprs=()
+aurocs=""
+fprs=""
 
 for EXCLUDED_CLASS in $ALL_CLASSES; do
     echo "================================================================="
@@ -38,7 +38,7 @@ for EXCLUDED_CLASS in $ALL_CLASSES; do
             --experiment_type open_set_hold_out \
             --task-type traffic \
             --exclude-classes "${EXCLUDED_CLASS}" \
-            --fraction  0.005
+            --fraction 1.0
     fi
 
     # 2. Train Baseline ResNet
@@ -88,8 +88,8 @@ for EXCLUDED_CLASS in $ALL_CLASSES; do
         AUROC=$(grep "AUROC:" "$RESULT_FILE" | awk '{print $2}')
         FPR=$(grep "FPR@TPR95:" "$RESULT_FILE" | awk '{print $2}')
         if [ -n "$AUROC" ]; then
-            aurocs+=($AUROC)
-            fprs+=($FPR)
+            aurocs="$aurocs $AUROC"
+            fprs="$fprs $FPR"
             echo "--> Result: AUROC=${AUROC}, FPR=${FPR}"
         fi
     fi
@@ -100,5 +100,5 @@ echo ""
 echo "================================================================="
 echo "Aggregated Results"
 echo "================================================================="
-echo "AUROCs: ${aurocs[@]}"
-echo "FPRs: ${fprs[@]}"
+echo "AUROCs: $aurocs"
+echo "FPRs: $fprs"

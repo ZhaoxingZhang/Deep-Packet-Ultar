@@ -12,7 +12,7 @@ MODEL_DIR="model/exp_traffic/incremental/gee_resnet"
 EVAL_DIR="evaluation_results/exp_traffic/incremental/gee_resnet"
 
 # Classes 4 (VoIP) and 7 (VPN-Email) are treated as "Minority/Expert" classes for this experiment
-MINORITY_CLASSES=(4 7)
+MINORITY_CLASSES="4 7"
 MINORITY_CLASSES_ARGS="--minority-classes 4 --minority-classes 7"
 MINORITY_CLASSES_ARGS_US="--minority_classes 4 --minority_classes 7"
 

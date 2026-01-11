@@ -36,7 +36,13 @@ from ml.utils import (
     help="The sampling strategy to use.",
     type=click.Choice(['random', 'class_aware']),
 )
-def main(data_path, model_path, task, validation_split, sampling_strategy):
+@click.option(
+    "--epochs",
+    default=20,
+    help="Number of epochs to train.",
+    type=int,
+)
+def main(data_path, model_path, task, validation_split, sampling_strategy, epochs):
     data_path = os.path.abspath(data_path)
     model_path = os.path.abspath(model_path)
     if task == "app":
@@ -51,7 +57,8 @@ def main(data_path, model_path, task, validation_split, sampling_strategy):
             model_path, 
             output_dim=output_dim, 
             validation_split=validation_split, 
-            sampling_strategy=sampling_strategy
+            sampling_strategy=sampling_strategy,
+            max_epochs=epochs
         )
     elif task == "traffic":
         # Dynamically determine output_dim from the training data
@@ -63,7 +70,8 @@ def main(data_path, model_path, task, validation_split, sampling_strategy):
             data_path, 
             model_path, 
             validation_split=validation_split, 
-            output_dim=output_dim
+            output_dim=output_dim,
+            max_epochs=epochs
         )
     else:
         exit("Not Support")

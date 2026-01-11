@@ -136,7 +136,7 @@ def train_resnet(
     # The ModelCheckpoint callback now handles saving the best model automatically.
 
 
-def train_application_classification_cnn_model(data_path, model_path, output_dim=17, validation_split=0.1, sampling_strategy='random'):
+def train_application_classification_cnn_model(data_path, model_path, output_dim=17, validation_split=0.1, sampling_strategy='random', max_epochs=20):
     logger = TensorBoardLogger(
         "application_classification_cnn_logs", "application_classification_cnn"
     )
@@ -149,7 +149,7 @@ def train_application_classification_cnn_model(data_path, model_path, output_dim
         c2_stride=1,
         output_dim=output_dim,
         data_path=data_path,
-        epoch=20,
+        epoch=max_epochs,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
@@ -158,7 +158,7 @@ def train_application_classification_cnn_model(data_path, model_path, output_dim
     )
 
 
-def train_application_classification_resnet_model(data_path, model_path, output_dim=17, validation_split=0.1, sampling_strategy='random'):
+def train_application_classification_resnet_model(data_path, model_path, output_dim=17, validation_split=0.1, sampling_strategy='random', max_epochs=40):
     logger = TensorBoardLogger(
         "application_classification_resnet_logs", "application_classification_resnet"
     )
@@ -170,7 +170,7 @@ def train_application_classification_resnet_model(data_path, model_path, output_
         c1_n_block=4,
         output_dim=output_dim,
         data_path=data_path,
-        epoch=40,
+        epoch=max_epochs,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
@@ -179,7 +179,7 @@ def train_application_classification_resnet_model(data_path, model_path, output_
     )
 
 
-def train_traffic_classification_cnn_model(data_path, model_path, output_dim=12, validation_split=0.1):
+def train_traffic_classification_cnn_model(data_path, model_path, output_dim=12, validation_split=0.1, max_epochs=20):
     logger = TensorBoardLogger(
         "traffic_classification_cnn_logs", "traffic_classification_cnn"
     )
@@ -192,7 +192,7 @@ def train_traffic_classification_cnn_model(data_path, model_path, output_dim=12,
         c2_stride=3,
         output_dim=output_dim,
         data_path=data_path,
-        epoch=20,
+        epoch=max_epochs,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
@@ -200,7 +200,7 @@ def train_traffic_classification_cnn_model(data_path, model_path, output_dim=12,
     )
 
 
-def train_traffic_classification_resnet_model(data_path, model_path, validation_split=0.1, output_dim=12):
+def train_traffic_classification_resnet_model(data_path, model_path, validation_split=0.1, output_dim=12, max_epochs=40):
     logger = TensorBoardLogger(
         "traffic_classification_resnet_logs", "traffic_classification_resnet"
     )
@@ -212,7 +212,7 @@ def train_traffic_classification_resnet_model(data_path, model_path, validation_
         c1_n_block=4,
         output_dim=output_dim,
         data_path=data_path,
-        epoch=40,
+        epoch=max_epochs,
         model_path=model_path,
         signal_length=1500,
         logger=logger,
