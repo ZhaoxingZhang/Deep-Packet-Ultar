@@ -33,7 +33,7 @@ if [ ! -f "${BASE_DIR}/main/traffic_classification/train.parquet/_SUCCESS" ]; th
         -t "${BASE_DIR}/main" \
         --experiment_type imbalanced \
         --task-type traffic \
-        --fraction  0.005
+        --fraction  0.01
 else
     echo "    Main Dataset exists."
 fi
@@ -47,7 +47,7 @@ if [ ! -f "${BASE_DIR}/minority/traffic_classification/train.parquet/_SUCCESS" ]
         --experiment_type exp8_minority \
         --task-type traffic \
         ${MINORITY_CLASSES_ARGS} \
-        --fraction  0.005
+        --fraction  0.2
 else
     echo "    Minority Dataset exists."
 fi
