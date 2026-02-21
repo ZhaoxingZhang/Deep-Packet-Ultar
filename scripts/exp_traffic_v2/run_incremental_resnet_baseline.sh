@@ -2,14 +2,14 @@
 set -e
 
 # ==================================================================================
-# Incremental Learning Baseline (ResNet) - traffic Dataset
+# Incremental Learning Baseline (ResNet) - traffic_v2 Dataset
 # ==================================================================================
 
 # Config
-DATA_SOURCE="processed_data/traffic"
-TARGET_DIR="train_test_data/exp_traffic/incremental/baseline_resnet"
-MODEL_DIR="model/exp_traffic/incremental"
-EVAL_DIR="evaluation_results/exp_traffic/incremental/baseline_resnet"
+DATA_SOURCE="processed_data/traffic_v2"
+TARGET_DIR="train_test_data/exp_traffic_v2/incremental/baseline_resnet"
+MODEL_DIR="model/exp_traffic_v2/incremental"
+EVAL_DIR="evaluation_results/exp_traffic_v2/incremental/baseline_resnet"
 
 mkdir -p "$TARGET_DIR" "$MODEL_DIR" "$EVAL_DIR"
 
