@@ -161,10 +161,19 @@ def evaluate(data_path, output_dir, eval_mode, model_path, model_type,
                 expert_outputs = minority_model(features)
                 expert_probs_small = torch.nn.functional.softmax(expert_outputs, dim=1)
 
-                expert_probs_full = torch.zeros_like(base_probs)
-                for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
-                    if expert_local_idx < expert_probs_small.shape[1]:
-                        expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
+                # Align expert probabilities to the full class space
+                # OSR scenario: expert and baseline trained on same dataset → same dimensions
+                # Incremental scenario: expert trained only on minority classes → different dimensions
+                if expert_probs_small.shape[1] == base_probs.shape[1]:
+                    # OSR scenario: dimensions match, direct copy
+                    expert_probs_full = expert_probs_small
+                else:
+                    # Incremental scenario: need label mapping
+                    expert_probs_full = torch.zeros_like(base_probs)
+                    for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
+                        if (expert_local_idx < expert_probs_small.shape[1] and
+                            original_label_idx < expert_probs_full.shape[1]):
+                            expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
                 
                 final_logits = gating_network(base_probs, expert_probs_full)
                 final_probs = torch.nn.functional.softmax(final_logits, dim=1)

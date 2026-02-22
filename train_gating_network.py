@@ -68,10 +68,18 @@ def generate_gating_inputs(feature_dataloader, baseline_model, minority_model, m
             expert_probs_small = torch.nn.functional.softmax(expert_outputs, dim=1)
 
             # Align expert probabilities to the full class space
-            expert_probs_full = torch.zeros_like(base_probs)
-            for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
-                if expert_local_idx < expert_probs_small.shape[1]:
-                    expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
+            # OSR scenario: expert and baseline trained on same dataset → same dimensions
+            # Incremental scenario: expert trained only on minority classes → different dimensions
+            if expert_probs_small.shape[1] == base_probs.shape[1]:
+                # OSR scenario: dimensions match, direct copy
+                expert_probs_full = expert_probs_small
+            else:
+                # Incremental scenario: need label mapping
+                expert_probs_full = torch.zeros_like(base_probs)
+                for expert_local_idx, original_label_idx in expert_idx_to_original_label.items():
+                    if (expert_local_idx < expert_probs_small.shape[1] and
+                        original_label_idx < expert_probs_full.shape[1]):
+                        expert_probs_full[:, original_label_idx] = expert_probs_small[:, expert_local_idx]
             
             # The input to the gating network is the concatenated probabilities
             gating_inputs.append(torch.cat((base_probs, expert_probs_full), dim=1).cpu())
