@@ -188,6 +188,6 @@ python evaluation.py \
 --minority_classes 7 \
 --gating_network_path model/gating_network_cross_entropy_loss_1115.pth
 
-scp -P 36047 'featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/log/*' log/
+scp -P 41825 'featurize@workspace.featurize.cn:/home/featurize/work/Deep-Packet-Ultar/log/exp_traffic_v2_0301.log' log/
 
 python preprocessing.py -s /Users/weisman/Documents/repo_root/dataset/ISCX\ VPN-nonVPN\ 2016/PCAPs/NonVPN-PCAPs -t processed_data/nonVPN --mask-ports
