@@ -23,7 +23,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DATASET_DIR="${PROJECT_ROOT}/train_test_data/exp_traffic_v2"
 MODEL_DIR="${PROJECT_ROOT}/model/exp_traffic_v2"
 EVAL_DIR="${PROJECT_ROOT}/evaluation_results/exp_traffic_v2"
-LOG_PATTERN="${PROJECT_ROOT}/log/exp_traffic_v2_*.log"
+LOG_PATTERN="${PROJECT_ROOT}/log/exp_traffic_v20_*.log"
 
 # Function to display usage
 usage() {
