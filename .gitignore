@@ -175,3 +175,5 @@ transfer.sh
 log/
 
  openspec/
+ thesis/
+ .vscode/
