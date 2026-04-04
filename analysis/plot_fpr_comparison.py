@@ -26,7 +26,8 @@ fpr_gee = [0.2617, 0.0668, 0.0323, 0.0246, 0.0127, 0.0254]
 x = np.arange(len(excluded_classes))
 width = 0.35
 
-fig, ax = plt.subplots(figsize=(10, 6))
+fig, ax = plt.subplots(figsize=(10, 7))
+plt.subplots_adjust(top=0.88, bottom=0.1, left=0.08, right=0.98)
 
 bars1 = ax.bar(x - width/2, fpr_baseline, width, label='Baseline',
               color='steelblue', alpha=0.8, edgecolor='black', linewidth=1.2)
@@ -60,20 +61,22 @@ add_value_labels(bars1)
 add_value_labels(bars2)
 
 # Add annotation for key improvements
-ax.annotate('Worst cases show\ndramatic improvement',
-            xy=(2.5, 0.85), xytext=(3.5, 0.95),
-            fontsize=10, ha='center',
-            arrowprops=dict(arrowstyle='->', lw=1.5, color='red'))
+# Point to the worst case (P2P class at index 3)
+ax.annotate('Worst case (P2P):\nBaseline FPR=0.974\n→ GEE FPR=0.025\n(39x improvement!)',
+            xy=(3, fpr_baseline[3]), xytext=(4.2, 0.75),
+            fontsize=9, ha='center', fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', alpha=0.4, edgecolor='red', linewidth=1.5),
+            arrowprops=dict(arrowstyle='->', lw=2, color='red', connectionstyle='arc3,rad=0.2'))
 
-# Add average values as text box
+# Add average values as text box (adjusted position to avoid overlap)
 avg_baseline = np.mean(fpr_baseline)
 avg_gee = np.mean(fpr_gee)
 improvement = avg_baseline - avg_gee
 
-textstr = f'Average FPR@TPR95:\nBaseline: {avg_baseline:.3f}\nGEE: {avg_gee:.3f}\nImprovement: {improvement:.3f} (7x better)'
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.3)
-ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=9,
-        verticalalignment='top', bbox=props)
+textstr = f'Average FPR@TPR95:\nBaseline: {avg_baseline:.3f}\nGEE: {avg_gee:.3f}\nImprovement: {improvement:.3f}\n({avg_baseline/avg_gee:.1f}x better)'
+props = dict(boxstyle='round,pad=0.6', facecolor='lightblue', alpha=0.5, edgecolor='navy', linewidth=1.5)
+ax.text(0.02, 0.97, textstr, transform=ax.transAxes, fontsize=9,
+        verticalalignment='top', horizontalalignment='left', bbox=props)
 
 plt.tight_layout()
 

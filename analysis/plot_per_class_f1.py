@@ -26,7 +26,8 @@ f1_gee = [0.28, 0.82, 0.92, 1.00, 0.99, 0.97]
 x = np.arange(len(classes))
 width = 0.35
 
-fig, ax = plt.subplots(figsize=(10, 6))
+fig, ax = plt.subplots(figsize=(10, 7.5))
+plt.subplots_adjust(top=0.82, bottom=0.1, left=0.1, right=0.95)
 
 bars1 = ax.bar(x - width/2, f1_baseline, width, label='Baseline',
               color='steelblue', alpha=0.8, edgecolor='black', linewidth=1.2)
@@ -60,26 +61,24 @@ def add_value_labels(bars):
 add_value_labels(bars1)
 add_value_labels(bars2)
 
-# Highlight minority class improvements
+# Highlight minority class improvements with prominent individual arrows
 for i in [0, 2]:  # Classes 5 and 7 (indices 0 and 2)
-    ax.annotate(f'{class_names[i]}\nF1: {f1_baseline[i]:.2f}→{f1_gee[i]:.2f}',
-                xy=(i, max(f1_baseline[i], f1_gee[i]) + 0.02),
-                xytext=(i, 1.15),
+    # Create more prominent annotations with better positioning
+    ax.annotate(f'{class_names[i]}\n{f1_baseline[i]:.2f}→{f1_gee[i]:.2f}',
+                xy=(i, f1_gee[i] + 0.04),
+                xytext=(i, 1.02),  # Lowered from 1.05 to 1.02
                 fontsize=9, ha='center', fontweight='bold',
-                arrowprops=dict(arrowstyle='->', lw=1.5, color='red'))
+                arrowprops=dict(arrowstyle='->', lw=2, color='darkred',
+                              shrinkA=0, shrinkB=0),
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='mistyrose',
+                         edgecolor='darkred', alpha=0.7, linewidth=1.5))
 
-# Add Macro-F1 annotation
+# Add Macro-F1 annotation (adjusted position to avoid overlap)
 textstr = f'Macro-F1:\nBaseline: 0.63\nGEE: 0.83\nImprovement: +32%'
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.3)
+props = dict(boxstyle='round,pad=0.5', facecolor='lightcyan', alpha=0.5,
+            edgecolor='teal', linewidth=1.5)
 ax.text(0.98, 0.98, textstr, transform=ax.transAxes, fontsize=10,
         verticalalignment='top', horizontalalignment='right', bbox=props)
-
-# Add annotation for minority class breakthrough
-ax.annotate('Minority classes (5, 7)\nshow dramatic improvements\n(0 → 0.28, 0 → 0.92)',
-            xy=(1, 0.5), xytext=(3.5, 0.3),
-            fontsize=10, ha='center', fontweight='bold',
-            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.3),
-            arrowprops=dict(arrowstyle='->', lw=1.5, color='orange'))
 
 plt.tight_layout()
 

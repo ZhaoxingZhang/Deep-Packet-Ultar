@@ -1,0 +1,72 @@
+# Configuration for GEE Model Analysis
+# 本地分析配置文件
+
+experiments:
+  traffic:
+    incremental:
+      baseline_model: "/Users/weisman/Documents/repo_root/graduate/Deep-Packet-Ultar/model/exp_traffic/incremental/gee_resnet/resnet_baseline.pt.ckpt"
+      expert_model: "/Users/weisman/Documents/repo_root/graduate/Deep-Packet-Ultar/model/exp_traffic/incremental/gee_resnet/resnet_minority_expert.pt.ckpt"
+      gating_network: "/Users/weisman/Documents/repo_root/graduate/Deep-Packet-Ultar/model/exp_traffic/incremental/gee_resnet/gating_network_resnet.pt"
+      test_data: "/Users/weisman/Documents/repo_root/graduate/Deep-Packet-Ultar/analysis_scripts/train_test_data/exp_traffic/incremental/gee_resnet/main/traffic_classification/test.parquet"
+      minority_classes: [4, 7]
+      model_type: "resnet"
+
+    openset:
+      baseline_model: "model/exp_traffic/openset/baseline_resnet/resnet_baseline.pt.ckpt"
+      expert_model: "model/exp_traffic/openset/minority_expert_resnet/resnet_minority_expert.pt.ckpt"
+      gating_network: "model/exp_traffic/openset/gee_resnet/gating_network_resnet.pt"
+      test_data: "train_test_data/exp_traffic/openset/test.parquet"
+      minority_classes: [5, 7]
+      model_type: "resnet"
+      has_garbage_class: true
+
+  traffic_v2:
+    incremental:
+      baseline_model: "model/exp_traffic_v2/incremental/resnet_baseline_all.pt.ckpt"
+      expert_model: "model/exp_traffic_v2/incremental/resnet_minority_expert.pt.ckpt"
+      gating_network: "model/exp_traffic_v2/incremental/gating_network_resnet.pt"
+      test_data: "train_test_data/exp_traffic_v2/incremental/test.parquet"
+      minority_classes: [5, 8]
+      model_type: "resnet"
+
+  traffic_v3:
+    incremental:
+      baseline_model: "model/exp_traffic_v3/incremental/resnet_baseline_all.pt.ckpt"
+      expert_model: "model/exp_traffic_v3/incremental/resnet_minority_expert.pt.ckpt"
+      gating_network: "model/exp_traffic_v3/incremental/gating_network_resnet.pt"
+      test_data: "train_test_data/exp_traffic_v3/incremental/test.parquet"
+      minority_classes: [7, 9]
+      model_type: "resnet"
+
+analysis:
+  batch_size: 64  # CPU上使用更小的batch size
+  device: "cpu"   # 使用CPU (本地没有GPU)
+  num_workers: 0  # Windows/Mac兼容性
+  random_seed: 42
+
+  # 特征提取配置
+  extract_penultimate_features: true
+  extract_softmax_probs: true
+  extract_gating_weights: true
+
+  # 可视化配置
+  pca_components: 2  # PCA降维到2D用于可视化
+  save_intermediate_results: true
+
+output:
+  base_dir: "./analysis_results"
+  subdirs:
+    features: "features"
+    weights: "weights"
+    entropy: "entropy"
+    decision_boundary: "decision_boundary"
+    gradients: "gradients"
+    figures: "figures"
+
+  save_features: true
+  save_probs: true
+  save_metrics: true
+
+  # 输出格式
+  feature_format: "parquet"  # 或 "csv"
+  metric_format: "json"
