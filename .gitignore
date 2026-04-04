@@ -174,4 +174,6 @@ transfer.sh
 
 log/
 
- openspec/
+ *openspec/*
+ *thesis/*
+ *.vscode/*
